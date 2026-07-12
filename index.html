@@ -1,0 +1,722 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>ASTEROID SWING — v0 greybox</title>
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body { background:#080814; overflow:hidden; font-family:'Courier New',monospace; }
+  canvas { display:block; width:100vw; height:100vh; cursor:crosshair; }
+
+  #ui {
+    position:fixed; top:16px; left:16px;
+    background:rgba(0,0,0,0.65);
+    border:1px solid rgba(255,220,50,0.3);
+    color:#ccc; padding:10px 16px;
+    border-radius:6px; font-size:12px; line-height:2;
+    pointer-events:none;
+  }
+  #ui b { color:#ffdd33; }
+
+  #stats {
+    position:fixed; bottom:16px; left:16px;
+    background:rgba(0,0,0,0.55);
+    border:1px solid rgba(255,255,255,0.1);
+    color:#adf; padding:8px 14px;
+    border-radius:6px; font-size:12px; line-height:1.8;
+    pointer-events:none;
+  }
+
+  #blockbar {
+    position:fixed; bottom:16px; left:50%;
+    transform:translateX(-50%);
+    display:flex; gap:8px; pointer-events:none;
+  }
+  .slot {
+    background:rgba(0,0,0,0.55);
+    border:1px solid rgba(255,255,255,0.15);
+    color:#889; padding:6px 14px;
+    border-radius:6px; font-size:11px; letter-spacing:1px;
+  }
+  .slot.sel { border-color:#ffdd33; color:#ffdd33; }
+
+  #crosshair {
+    position:fixed; top:50%; left:50%;
+    transform:translate(-50%,-50%);
+    pointer-events:none;
+  }
+
+  #latch {
+    position:fixed; top:50%; left:50%;
+    transform:translate(-50%, -220%);
+    color:#ffdd33; font-size:13px; letter-spacing:3px;
+    pointer-events:none; opacity:0;
+    transition:opacity 0.15s;
+  }
+
+  #start {
+    position:fixed; inset:0;
+    background:rgba(8,8,20,0.92);
+    display:flex; flex-direction:column;
+    align-items:center; justify-content:center;
+    color:#fff; gap:14px;
+    z-index:10; text-align:center;
+  }
+  #start h1 { font-size:44px; letter-spacing:10px; color:#ffdd33; }
+  #start p { color:#aaa; font-size:13px; letter-spacing:2px; line-height:1.9; }
+  #start button {
+    margin-top:8px;
+    background:transparent; border:1px solid #ffdd33;
+    color:#ffdd33; padding:10px 32px;
+    font-family:'Courier New',monospace;
+    font-size:13px; letter-spacing:3px;
+    cursor:pointer; border-radius:4px;
+    transition:background 0.2s;
+  }
+  #start button:hover { background:rgba(255,220,50,0.1); }
+</style>
+</head>
+<body>
+
+<canvas id="c"></canvas>
+
+<div id="start">
+  <h1>ASTEROID SWING</h1>
+  <p>v0 greybox &middot; swing &middot; land &middot; build</p>
+  <p style="color:#666;font-size:11px;">
+    HOLD CLICK grapple &middot; W/S reel rope &middot; WASD move &middot; SPACE jump<br>
+    RIGHT-CLICK place block &middot; 1/2/3 block type &middot; X remove &middot; R respawn
+  </p>
+  <button id="playbtn">CLICK TO PLAY</button>
+</div>
+
+<div id="ui">
+  <b>HOLD CLICK</b> grapple asteroid under crosshair<br>
+  <b>W / S</b> reel in / out while swinging<br>
+  <b>WASD</b> walk on surface &middot; <b>SPACE</b> jump<br>
+  <b>RIGHT-CLICK</b> place block &middot; <b>X</b> remove<br>
+  <b>R</b> respawn &middot; <b>SCROLL</b> camera zoom
+</div>
+
+<div id="crosshair">
+  <svg width="22" height="22" viewBox="0 0 22 22">
+    <line x1="11" y1="0" x2="11" y2="22" stroke="rgba(255,255,255,0.5)" stroke-width="1"/>
+    <line x1="0" y1="11" x2="22" y2="11" stroke="rgba(255,255,255,0.5)" stroke-width="1"/>
+    <circle id="dot" cx="11" cy="11" r="3.5" fill="none" stroke="#ffdd33" stroke-width="1.5"/>
+  </svg>
+</div>
+
+<div id="latch">LATCHED</div>
+
+<div id="stats">
+  v: 0.0 m/s<br>
+  <span id="modestat"></span><br>
+  <span id="grapstat" style="color:#ffdd33;"></span>
+</div>
+
+<div id="blockbar">
+  <div class="slot sel" id="slot0">1 CUBE</div>
+  <div class="slot" id="slot1">2 PLATFORM</div>
+  <div class="slot" id="slot2">3 BEACON</div>
+</div>
+
+<script type="importmap">
+{ "imports": { "three": "https://cdn.jsdelivr.net/npm/three@0.164.1/build/three.module.js" } }
+</script>
+<script type="module">
+import * as THREE from 'three';
+// ============================================================
+// CONFIG — all game-feel tuning lives here. Iterate here first.
+// ============================================================
+const CONFIG = {
+  gravity: 22,          // surface gravity strength (m/s^2)
+  playerRadius: 0.5,
+  walkSpeed: 8,
+  walkAccel: 45,
+  friction: 9,
+  jumpSpeed: 9.5,
+  airNudge: 4,          // WASD mid-air accel
+  airNudgeCap: 22,      // max speed the nudge can push toward
+  ropeReel: 8,          // W/S reel speed while grappled (m/s)
+  grappleRange: 150,
+  buildRange: 14,
+  camDist: 7,
+  camLerp: 0.12,
+  upBlend: 3.5,         // how fast camera "up" adapts near asteroids
+  drag: 0.995,
+  respawnDist: 550
+};
+
+const canvas = document.getElementById('c');
+
+// On-screen error reporter — bugs should be visible, not buried in the console
+const errBox = document.createElement('div');
+errBox.style.cssText = 'position:fixed;top:16px;right:16px;max-width:40vw;background:rgba(60,0,0,0.85);color:#faa;font:12px/1.6 monospace;padding:8px 12px;border:1px solid #f55;border-radius:6px;display:none;z-index:99;white-space:pre-wrap;';
+document.body.appendChild(errBox);
+window.addEventListener('error', ev => {
+  errBox.style.display = 'block';
+  errBox.textContent = 'ERROR: ' + ev.message + (ev.lineno ? ' @line '+ev.lineno : '');
+});
+const renderer = new THREE.WebGLRenderer({canvas, antialias:true});
+renderer.setPixelRatio(Math.min(window.devicePixelRatio,2));
+renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.setClearColor(0x080814);
+
+const scene = new THREE.Scene();
+scene.fog = new THREE.FogExp2(0x080814, 0.0028);
+
+const camera = new THREE.PerspectiveCamera(72, window.innerWidth/window.innerHeight, 0.1, 1200);
+
+// Lighting
+scene.add(new THREE.AmbientLight(0x8899cc, 0.45));
+const sun = new THREE.DirectionalLight(0xffffff, 1.2);
+sun.position.set(60,120,80);
+scene.add(sun);
+const fill = new THREE.DirectionalLight(0x4466ff, 0.35);
+fill.position.set(-40,-30,-60);
+scene.add(fill);
+
+// Stars
+const starVerts = [];
+for(let i=0;i<1600;i++){
+  const r = 350+Math.random()*400;
+  const theta = Math.random()*Math.PI*2;
+  const phi = Math.acos(2*Math.random()-1);
+  starVerts.push(r*Math.sin(phi)*Math.cos(theta), r*Math.cos(phi), r*Math.sin(phi)*Math.sin(theta));
+}
+const starGeo = new THREE.BufferGeometry();
+starGeo.setAttribute('position', new THREE.Float32BufferAttribute(starVerts,3));
+scene.add(new THREE.Points(starGeo, new THREE.PointsMaterial({color:0xffffff,size:0.9,sizeAttenuation:true})));
+
+// ============================================================
+// Asteroids — big, procedural, walkable.
+// Geometry displacement and player collision share shapeFn,
+// so the analytic surface always matches the visible mesh.
+// ============================================================
+function seededRand(seed) {
+  const x = Math.sin(seed*127.1 + 311.7) * 43758.5453;
+  return x - Math.floor(x);
+}
+
+function makeShapeFn(seed) {
+  const ks = [];
+  for(let i=0;i<3;i++){
+    const v = new THREE.Vector3(
+      seededRand(seed*7+i)-0.5,
+      seededRand(seed*13+i)-0.5,
+      seededRand(seed*29+i)-0.5
+    ).normalize().multiplyScalar(2.5 + seededRand(seed*31+i)*3.5);
+    ks.push(v);
+  }
+  const amps = [0.10, 0.06, 0.035].map((a,i)=>a*(0.8+seededRand(seed*41+i)*0.5));
+  return dir => 1 + amps[0]*Math.sin(dir.dot(ks[0]))
+                  + amps[1]*Math.sin(dir.dot(ks[1]))
+                  + amps[2]*Math.sin(dir.dot(ks[2]));
+}
+
+const ASTEROID_DEFS = [
+  { pos:[   0, -40,    0], R:30, hue:0.07 },
+  { pos:[  90,  10,  -30], R:22, hue:0.09 },
+  { pos:[ -70,  30,   60], R:18, hue:0.05 },
+  { pos:[  30,  80,   95], R:26, hue:0.11 },
+  { pos:[ -60, -25, -110], R:20, hue:0.46 },
+  { pos:[ 145,  65,   70], R:16, hue:0.08 }
+];
+
+const asteroids = [];
+const asteroidMeshes = [];
+const tmpDir = new THREE.Vector3();
+
+ASTEROID_DEFS.forEach((def, idx) => {
+  const shapeFn = makeShapeFn(idx*100+17);
+  const detail = def.R > 24 ? 4 : 3;
+  const geo = new THREE.IcosahedronGeometry(def.R, detail);
+  const posAttr = geo.getAttribute('position');
+  const v = new THREE.Vector3();
+  for(let i=0;i<posAttr.count;i++){
+    v.fromBufferAttribute(posAttr, i).normalize();
+    const r = def.R * shapeFn(v);
+    posAttr.setXYZ(i, v.x*r, v.y*r, v.z*r);
+  }
+  geo.computeVertexNormals();
+  const col = new THREE.Color().setHSL(def.hue, 0.18, 0.32 + seededRand(idx*3)*0.08);
+  const mat = new THREE.MeshLambertMaterial({color:col, flatShading:true});
+  const mesh = new THREE.Mesh(geo, mat);
+  mesh.position.set(def.pos[0], def.pos[1], def.pos[2]);
+  scene.add(mesh);
+  const a = { center: mesh.position, R: def.R, shapeFn, mesh };
+  asteroids.push(a);
+  asteroidMeshes.push(mesh);
+});
+
+function nearestAsteroid(p) {
+  let best=null, bestSurf=Infinity;
+  for(const a of asteroids){
+    tmpDir.copy(p).sub(a.center);
+    const dCenter = tmpDir.length();
+    const surfR = a.R * a.shapeFn(tmpDir.clone().normalize());
+    const dSurf = dCenter - surfR;
+    if(dSurf < bestSurf){ bestSurf = dSurf; best = {a, dCenter, surfR, dSurf}; }
+  }
+  return best;
+}
+
+// Decorative tumbling debris (homage to the old sandbox shapes)
+const palette = [0x7744ee,0x11bb88,0x2299ee,0xdd8811,0xcc2277,0x44ccaa];
+const debris = [];
+for(let i=0;i<40;i++){
+  const seed = i*17+3;
+  const sz = 0.5 + seededRand(seed)*1.2;
+  const t = i%3;
+  const geo = t===0 ? new THREE.OctahedronGeometry(sz)
+            : t===1 ? new THREE.TetrahedronGeometry(sz)
+            : new THREE.BoxGeometry(sz,sz,sz);
+  const mesh = new THREE.Mesh(geo, new THREE.MeshLambertMaterial({color:palette[i%palette.length]}));
+  mesh.position.set(
+    (seededRand(seed*3)-0.5)*380,
+    (seededRand(seed*5)-0.5)*300,
+    (seededRand(seed*7)-0.5)*380
+  );
+  mesh.userData.rot = new THREE.Vector3(
+    (seededRand(seed*11)-0.5)*0.01,
+    (seededRand(seed*13)-0.5)*0.015,
+    (seededRand(seed*17)-0.5)*0.008
+  );
+  scene.add(mesh);
+  debris.push(mesh);
+}
+
+// ============================================================
+// Player, rope, trail
+// ============================================================
+const player = new THREE.Mesh(
+  new THREE.SphereGeometry(CONFIG.playerRadius*0.8,16,16),
+  new THREE.MeshLambertMaterial({color:0xddeeff,emissive:0x223355})
+);
+scene.add(player);
+
+const trailPts = Array.from({length:24}, ()=>new THREE.Vector3());
+const trailGeo = new THREE.BufferGeometry().setFromPoints(trailPts);
+scene.add(new THREE.Line(trailGeo, new THREE.LineBasicMaterial({color:0x4466ff,transparent:true,opacity:0.3})));
+
+const ROPE_SEGS = 16;
+const ropePts = Array.from({length:ROPE_SEGS}, ()=>new THREE.Vector3());
+const ropeGeo = new THREE.BufferGeometry().setFromPoints(ropePts);
+const ropeLine = new THREE.Line(ropeGeo, new THREE.LineBasicMaterial({color:0xffcc33}));
+ropeLine.visible = false;
+scene.add(ropeLine);
+
+const previewPts = [new THREE.Vector3(), new THREE.Vector3()];
+const previewGeo = new THREE.BufferGeometry().setFromPoints(previewPts);
+const previewLine = new THREE.Line(previewGeo, new THREE.LineBasicMaterial({color:0xffffff, transparent:true, opacity:0.25}));
+previewLine.visible = false;
+scene.add(previewLine);
+
+const ring = new THREE.Mesh(
+  new THREE.TorusGeometry(1,0.06,8,48),
+  new THREE.MeshBasicMaterial({color:0xffdd33})
+);
+ring.visible = false;
+scene.add(ring);
+
+// ============================================================
+// Building
+// ============================================================
+const BLOCK_TYPES = [
+  { name:'CUBE',     half:new THREE.Vector3(0.8,0.8,0.8),   make:()=>new THREE.BoxGeometry(1.6,1.6,1.6),        color:0x8899aa, emissive:0x000000 },
+  { name:'PLATFORM', half:new THREE.Vector3(1.6,0.18,1.6),  make:()=>new THREE.BoxGeometry(3.2,0.36,3.2),       color:0x667788, emissive:0x000000 },
+  { name:'BEACON',   half:new THREE.Vector3(0.35,1.0,0.35), make:()=>new THREE.CylinderGeometry(0.14,0.35,2,8), color:0x332200, emissive:0xffdd33 }
+];
+let selectedBlock = 0;
+const blocks = [];       // { mesh, half }
+const blockMeshes = [];
+
+const ghost = new THREE.Mesh(
+  BLOCK_TYPES[0].make(),
+  new THREE.MeshLambertMaterial({color:0xffdd33, transparent:true, opacity:0.35})
+);
+ghost.visible = false;
+scene.add(ghost);
+
+function setSelectedBlock(i){
+  selectedBlock = i;
+  for(let s=0;s<3;s++) document.getElementById('slot'+s).className = 'slot'+(s===i?' sel':'');
+  ghost.geometry.dispose();
+  ghost.geometry = BLOCK_TYPES[i].make();
+}
+
+const raycaster = new THREE.Raycaster();
+function aimHit(range, includeBlocks) {
+  raycaster.set(camera.position, getLookDir());
+  raycaster.far = range + CONFIG.camDist + 10;
+  const targets = includeBlocks ? asteroidMeshes.concat(blockMeshes) : asteroidMeshes;
+  const hits = raycaster.intersectObjects(targets, false);
+  for(const h of hits){
+    if(h.point.distanceTo(player.position) <= range) return h;
+  }
+  return null;
+}
+
+function placeBlock() {
+  const hit = aimHit(CONFIG.buildRange, true);
+  if(!hit) return;
+  const t = BLOCK_TYPES[selectedBlock];
+  const n = hit.face.normal.clone().transformDirection(hit.object.matrixWorld).normalize();
+  const mesh = new THREE.Mesh(t.make(), new THREE.MeshLambertMaterial({color:t.color, emissive:t.emissive}));
+  mesh.position.copy(hit.point).addScaledVector(n, t.half.y);
+  mesh.quaternion.setFromUnitVectors(new THREE.Vector3(0,1,0), n);
+  mesh.updateMatrixWorld();
+  scene.add(mesh);
+  blocks.push({mesh, half:t.half});
+  blockMeshes.push(mesh);
+}
+
+function removeBlock() {
+  raycaster.set(camera.position, getLookDir());
+  raycaster.far = CONFIG.buildRange + CONFIG.camDist + 10;
+  const hits = raycaster.intersectObjects(blockMeshes, false);
+  if(!hits.length) return;
+  const mesh = hits[0].object;
+  if(hits[0].point.distanceTo(player.position) > CONFIG.buildRange) return;
+  scene.remove(mesh);
+  blockMeshes.splice(blockMeshes.indexOf(mesh),1);
+  blocks.splice(blocks.findIndex(b=>b.mesh===mesh),1);
+}
+
+// ============================================================
+// State
+// ============================================================
+const vel = new THREE.Vector3();
+let grappled = false;
+const anchorPt = new THREE.Vector3();
+let ropeLen = 0;
+let ropeAnimT = 0;
+let ropeAnimating = false;
+let grounded = false;
+let jumpQueued = false;
+let locked = false;
+const keys = {};
+
+// Camera basis: smoothed local "up" so walking around asteroids feels right
+const camUp = new THREE.Vector3(0,1,0);
+const camRight = new THREE.Vector3(1,0,0);
+let camForward = new THREE.Vector3(0,0,-1);
+let pitch = 0.15;
+let yawDelta = 0;
+let camDist = CONFIG.camDist;
+
+function getLookDir() {
+  return camForward.clone().multiplyScalar(Math.cos(pitch)).addScaledVector(camUp, Math.sin(pitch)).normalize();
+}
+
+// HUD element refs (must exist before respawn -> releaseGrapple runs)
+const latchEl = document.getElementById('latch');
+const statsEl = document.getElementById('stats');
+const grapstat = document.getElementById('grapstat');
+const modestat = document.getElementById('modestat');
+const dot = document.getElementById('dot');
+
+// Spawn on top of the first asteroid
+const spawnAsteroid = asteroids[0];
+const spawnDir = new THREE.Vector3(0,1,0);
+const spawnPoint = spawnAsteroid.center.clone().addScaledVector(
+  spawnDir, spawnAsteroid.R * spawnAsteroid.shapeFn(spawnDir) + CONFIG.playerRadius + 0.5
+);
+function respawn(){
+  player.position.copy(spawnPoint);
+  vel.set(0,0,0);
+  releaseGrapple();
+}
+respawn();
+for(const p of trailPts) p.copy(player.position);
+
+// ============================================================
+// Input
+// ============================================================
+
+function attachGrapple() {
+  const hit = aimHit(CONFIG.grappleRange, true);
+  if(hit) {
+    anchorPt.copy(hit.point);
+    ropeLen = Math.max(player.position.distanceTo(anchorPt)*0.97, 3);
+    grappled = true;
+    ropeAnimating = true;
+    ropeAnimT = 0;
+    ropeLine.visible = true;
+    latchEl.style.opacity='1';
+    setTimeout(()=>latchEl.style.opacity='0',700);
+  }
+}
+
+function releaseGrapple() {
+  grappled = false;
+  ropeAnimating = false;
+  ropeLine.visible = false;
+  grapstat.textContent = '';
+}
+
+let playing = false;
+function tryPointerLock() {
+  try {
+    const p = canvas.requestPointerLock();
+    if(p && p.catch) p.catch(()=>{});
+  } catch(err) { /* sandboxed contexts refuse pointer lock; mouse-look fallback covers it */ }
+}
+
+canvas.addEventListener('mousedown', e => {
+  if(!playing) return;
+  if(!locked) tryPointerLock();
+  if(e.button === 0) attachGrapple();
+  if(e.button === 2) placeBlock();
+});
+canvas.addEventListener('mouseup', e => {
+  if(e.button === 0) releaseGrapple();
+});
+canvas.addEventListener('contextmenu', e => e.preventDefault());
+
+document.addEventListener('pointerlockchange', () => {
+  locked = !!document.pointerLockElement;
+});
+
+document.addEventListener('mousemove', e => {
+  if(!playing) return;
+  const mx = e.movementX || 0, my = e.movementY || 0;
+  yawDelta -= mx*0.0018;
+  pitch = Math.max(-1.25, Math.min(1.25, pitch - my*0.0018));
+});
+
+document.addEventListener('wheel', e => {
+  camDist = Math.max(3, Math.min(18, camDist + e.deltaY*0.01));
+});
+
+document.addEventListener('keydown', e => {
+  keys[e.code]=true;
+  if(e.code==='Space' && !e.repeat) jumpQueued = true;
+  if(e.code==='Digit1') setSelectedBlock(0);
+  if(e.code==='Digit2') setSelectedBlock(1);
+  if(e.code==='Digit3') setSelectedBlock(2);
+  if(e.code==='KeyX') removeBlock();
+  if(e.code==='KeyR') respawn();
+});
+document.addEventListener('keyup', e => { keys[e.code]=false; });
+
+// ============================================================
+// Main loop
+// ============================================================
+let last = performance.now();
+let frameCount = 0;
+const scratch = new THREE.Vector3();
+const scratch2 = new THREE.Vector3();
+
+function animate(now) {
+  requestAnimationFrame(animate);
+  const dt = Math.min((now-last)/1000, 0.05);
+  last = now;
+  frameCount++;
+
+  // --- nearest asteroid + local up ---
+  const near = nearestAsteroid(player.position);
+  const localUp = scratch.copy(player.position).sub(near.a.center).normalize().clone();
+
+  // --- camera basis update ---
+  const desiredUp = (near.dSurf < near.a.R*1.4) ? localUp : new THREE.Vector3(0,1,0);
+  const blend = 1 - Math.exp(-CONFIG.upBlend*dt);
+  camUp.lerp(desiredUp, blend).normalize();
+  if(yawDelta !== 0){ camRight.applyAxisAngle(camUp, yawDelta); yawDelta = 0; }
+  camRight.addScaledVector(camUp, -camRight.dot(camUp)).normalize();
+  camForward = new THREE.Vector3().crossVectors(camUp, camRight);
+  const look = getLookDir();
+
+  // --- gravity toward nearest asteroid ---
+  const gStrength = CONFIG.gravity * Math.min(1, (near.a.R / Math.max(near.dCenter, near.a.R))**2);
+  vel.addScaledVector(localUp, -gStrength*dt);
+
+  // --- movement input ---
+  if(grounded && !grappled) {
+    const vUpAmt = vel.dot(localUp);
+    const vUp = scratch2.copy(localUp).multiplyScalar(vUpAmt);
+    const vT = vel.clone().sub(vUp);
+    const fT = camForward.clone().addScaledVector(localUp, -camForward.dot(localUp)).normalize();
+    const rT = camRight.clone().addScaledVector(localUp, -camRight.dot(localUp)).normalize();
+    const input = new THREE.Vector3();
+    if(keys['KeyW']) input.add(fT);
+    if(keys['KeyS']) input.sub(fT);
+    if(keys['KeyD']) input.add(rT);
+    if(keys['KeyA']) input.sub(rT);
+    if(input.lengthSq() > 0) {
+      input.normalize();
+      vT.addScaledVector(input, CONFIG.walkAccel*dt);
+      if(vT.length() > CONFIG.walkSpeed) vT.setLength(CONFIG.walkSpeed);
+    } else {
+      vT.multiplyScalar(Math.max(0, 1 - CONFIG.friction*dt));
+    }
+    vel.copy(vT).addScaledVector(localUp, vUpAmt);
+    if(jumpQueued) vel.addScaledVector(localUp, CONFIG.jumpSpeed);
+  } else if(grappled) {
+    // reel with W/S, nudge with A/D
+    if(keys['KeyW']) ropeLen = Math.max(2, ropeLen - CONFIG.ropeReel*dt);
+    if(keys['KeyS']) ropeLen = Math.min(CONFIG.grappleRange, ropeLen + CONFIG.ropeReel*dt);
+    [['KeyA',-1],['KeyD',1]].forEach(([k,s])=>{
+      if(!keys[k]) return;
+      const dir = camRight.clone().multiplyScalar(s);
+      const proj = vel.clone().projectOnVector(dir);
+      if(proj.lengthSq() < CONFIG.airNudgeCap**2) vel.addScaledVector(dir, CONFIG.airNudge*dt);
+    });
+  } else {
+    // free-fall nudge
+    [['KeyW',look,1],['KeyS',look,-1],['KeyA',camRight,-1],['KeyD',camRight,1]].forEach(([k,base,s])=>{
+      if(!keys[k]) return;
+      const dir = base.clone().multiplyScalar(s);
+      const proj = vel.clone().projectOnVector(dir);
+      if(proj.lengthSq() < CONFIG.airNudgeCap**2) vel.addScaledVector(dir, CONFIG.airNudge*dt);
+    });
+  }
+  jumpQueued = false;
+
+  vel.multiplyScalar(CONFIG.drag);
+  player.position.addScaledVector(vel, dt);
+
+  // --- asteroid surface collision (analytic, matches mesh) ---
+  grounded = false;
+  {
+    const n2 = nearestAsteroid(player.position);
+    const dir = player.position.clone().sub(n2.a.center).normalize();
+    const surfR = n2.a.R * n2.a.shapeFn(dir);
+    const dSurf = n2.dCenter - surfR - CONFIG.playerRadius;
+    if(dSurf <= 0.03) {
+      player.position.copy(n2.a.center).addScaledVector(dir, surfR + CONFIG.playerRadius);
+      const radial = vel.dot(dir);
+      if(radial < 0) vel.addScaledVector(dir, -radial);
+      grounded = true;
+    }
+  }
+
+  // --- block collision (sphere vs oriented box) ---
+  for(const b of blocks){
+    const local = b.mesh.worldToLocal(player.position.clone());
+    const c = new THREE.Vector3(
+      Math.max(-b.half.x, Math.min(b.half.x, local.x)),
+      Math.max(-b.half.y, Math.min(b.half.y, local.y)),
+      Math.max(-b.half.z, Math.min(b.half.z, local.z))
+    );
+    const delta = local.clone().sub(c);
+    const d = delta.length();
+    if(d > 0.0001 && d < CONFIG.playerRadius) {
+      const pushLocal = delta.normalize();
+      const pushWorld = pushLocal.clone().transformDirection(b.mesh.matrixWorld).normalize();
+      player.position.addScaledVector(pushWorld, CONFIG.playerRadius - d);
+      const vn = vel.dot(pushWorld);
+      if(vn < 0) vel.addScaledVector(pushWorld, -vn);
+      const upLocal = player.position.clone().sub(near.a.center).normalize();
+      if(pushWorld.dot(upLocal) > 0.5) grounded = true;
+    }
+  }
+
+  // --- rope constraint ---
+  if(grappled) {
+    const diff = player.position.clone().sub(anchorPt);
+    const dist = diff.length();
+    if(dist > ropeLen) {
+      const dir = diff.normalize();
+      player.position.copy(anchorPt).addScaledVector(dir, ropeLen);
+      const radial = vel.dot(dir);
+      if(radial > 0) vel.addScaledVector(dir, -radial);
+    }
+    grapstat.textContent = `r: ${ropeLen.toFixed(1)}m · GRAPPLED`;
+  }
+
+  // --- out-of-bounds respawn ---
+  if(player.position.length() > CONFIG.respawnDist) respawn();
+
+  // --- trail ---
+  trailPts.pop();
+  trailPts.unshift(player.position.clone());
+  trailGeo.setFromPoints(trailPts);
+
+  // --- rope render ---
+  if(ropeLine.visible) {
+    if(ropeAnimating) {
+      ropeAnimT = Math.min(ropeAnimT + dt*9, 1);
+      if(ropeAnimT>=1) ropeAnimating=false;
+    }
+    const tip = player.position.clone().lerp(anchorPt, ropeAnimT);
+    const sagDir = localUp.clone().negate();
+    for(let i=0;i<ROPE_SEGS;i++){
+      const f = i/(ROPE_SEGS-1);
+      const sag = Math.sin(Math.PI*f)*Math.max(0, 1.2*(1-vel.length()*0.02));
+      ropePts[i].lerpVectors(player.position, tip, f).addScaledVector(sagDir, sag);
+    }
+    ropeGeo.setFromPoints(ropePts);
+  }
+
+  // --- aim feedback: grapple target ring / build ghost ---
+  const buildHit = aimHit(CONFIG.buildRange, true);
+  if(buildHit && !grappled) {
+    const t = BLOCK_TYPES[selectedBlock];
+    const n = buildHit.face.normal.clone().transformDirection(buildHit.object.matrixWorld).normalize();
+    ghost.position.copy(buildHit.point).addScaledVector(n, t.half.y);
+    ghost.quaternion.setFromUnitVectors(new THREE.Vector3(0,1,0), n);
+    ghost.visible = true;
+  } else ghost.visible = false;
+
+  const grapHit = grappled ? null : aimHit(CONFIG.grappleRange, true);
+  if(grapHit && !grappled) {
+    ring.scale.setScalar(1.2);
+    ring.position.copy(grapHit.point);
+    ring.lookAt(camera.position);
+    ring.visible = true;
+    dot.setAttribute('stroke','#ff4433');
+    previewPts[0].copy(player.position);
+    previewPts[1].copy(grapHit.point);
+    previewGeo.setFromPoints(previewPts);
+    previewLine.visible = true;
+  } else {
+    ring.visible = false;
+    previewLine.visible = false;
+    dot.setAttribute('stroke','#ffdd33');
+  }
+
+  // --- debris ---
+  for(const d of debris){
+    d.rotation.x += d.userData.rot.x;
+    d.rotation.y += d.userData.rot.y;
+    d.rotation.z += d.userData.rot.z;
+  }
+
+  // --- camera ---
+  const idealCamPos = player.position.clone()
+    .addScaledVector(look, -camDist)
+    .addScaledVector(camUp, 1.5);
+  camera.position.lerp(idealCamPos, CONFIG.camLerp);
+  camera.up.copy(camUp);
+  camera.lookAt(player.position.clone().addScaledVector(look, 10));
+
+  // --- HUD ---
+  if(frameCount%6===0) {
+    const speed = vel.length();
+    modestat.textContent = grounded ? 'GROUNDED' : (grappled ? 'SWINGING' : 'DRIFTING');
+    statsEl.innerHTML = `v: ${speed.toFixed(1)} m/s<br>`
+      + `<span style="color:#8fa">${modestat.textContent} · blocks: ${blocks.length}</span><br>`
+      + `<span style="color:#ffdd33">${grapstat.textContent}</span>`;
+  }
+
+  renderer.render(scene, camera);
+}
+requestAnimationFrame(animate);
+
+window.addEventListener('resize', ()=>{
+  renderer.setSize(window.innerWidth, window.innerHeight);
+  camera.aspect = window.innerWidth/window.innerHeight;
+  camera.updateProjectionMatrix();
+});
+
+function startGame() {
+  document.getElementById('start').style.display='none';
+  playing = true;
+  canvas.style.cursor = 'none';
+  tryPointerLock();
+}
+document.getElementById('playbtn').addEventListener('click', startGame);
+</script>
+</body>
+</html>
