@@ -2,10 +2,10 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<title>ASTEROID SWING — v0 greybox</title>
+<title>SOLAR SWING — v0.2</title>
 <style>
   * { margin:0; padding:0; box-sizing:border-box; }
-  body { background:#080814; overflow:hidden; font-family:'Courier New',monospace; }
+  body { background:#05050e; overflow:hidden; font-family:'Courier New',monospace; }
   canvas { display:block; width:100vw; height:100vh; cursor:crosshair; }
 
   #ui {
@@ -26,6 +26,18 @@
     border-radius:6px; font-size:12px; line-height:1.8;
     pointer-events:none;
   }
+
+  #heat {
+    position:fixed; bottom:16px; right:16px;
+    width:190px;
+    background:rgba(0,0,0,0.55);
+    border:1px solid rgba(255,255,255,0.15);
+    color:#889; padding:8px 12px;
+    border-radius:6px; font-size:11px; letter-spacing:1px;
+    pointer-events:none;
+  }
+  #heatbar { height:8px; background:rgba(255,255,255,0.08); border-radius:4px; margin-top:6px; overflow:hidden; }
+  #heatfill { height:100%; width:0%; background:#ffdd33; border-radius:4px; }
 
   #blockbar {
     position:fixed; bottom:16px; left:50%;
@@ -56,7 +68,7 @@
 
   #start {
     position:fixed; inset:0;
-    background:rgba(8,8,20,0.92);
+    background:rgba(5,5,14,0.93);
     display:flex; flex-direction:column;
     align-items:center; justify-content:center;
     color:#fff; gap:14px;
@@ -81,21 +93,21 @@
 <canvas id="c"></canvas>
 
 <div id="start">
-  <h1>ASTEROID SWING</h1>
-  <p>v0 greybox &middot; swing &middot; land &middot; build</p>
+  <h1>SOLAR SWING</h1>
+  <p>v0.2 &middot; venus to uranus &middot; relative scale</p>
   <p style="color:#666;font-size:11px;">
-    HOLD CLICK grapple &middot; W/S reel rope &middot; WASD move &middot; SPACE jump<br>
-    RIGHT-CLICK place block &middot; 1/2/3 block type &middot; X remove &middot; R respawn
+    HOLD CLICK grapple &middot; W/S reel &middot; SHIFT jetpack (watch the heat)<br>
+    WASD move &middot; SPACE jump &middot; RIGHT-CLICK build &middot; 1/2/3 type &middot; X remove &middot; R respawn
   </p>
   <button id="playbtn">CLICK TO PLAY</button>
 </div>
 
 <div id="ui">
-  <b>HOLD CLICK</b> grapple asteroid under crosshair<br>
-  <b>W / S</b> reel in / out while swinging<br>
-  <b>WASD</b> walk on surface &middot; <b>SPACE</b> jump<br>
-  <b>RIGHT-CLICK</b> place block &middot; <b>X</b> remove<br>
-  <b>R</b> respawn &middot; <b>SCROLL</b> camera zoom
+  <b>HOLD CLICK</b> grapple (stiff rod)<br>
+  <b>W / S</b> reel in / out while latched<br>
+  <b>SHIFT</b> jetpack &middot; overheats<br>
+  <b>WASD</b> walk &middot; <b>SPACE</b> jump<br>
+  <b>RIGHT-CLICK</b> place &middot; <b>X</b> remove &middot; <b>R</b> respawn
 </div>
 
 <div id="crosshair">
@@ -114,6 +126,8 @@
   <span id="grapstat" style="color:#ffdd33;"></span>
 </div>
 
+<div id="heat">JETPACK<div id="heatbar"><div id="heatfill"></div></div></div>
+
 <div id="blockbar">
   <div class="slot sel" id="slot0">1 CUBE</div>
   <div class="slot" id="slot1">2 PLATFORM</div>
@@ -125,26 +139,37 @@
 </script>
 <script type="module">
 import * as THREE from 'three';
+
 // ============================================================
 // CONFIG — all game-feel tuning lives here. Iterate here first.
 // ============================================================
 const CONFIG = {
-  gravity: 22,          // surface gravity strength (m/s^2)
+  gravityK: 0.3,        // surface gravity = gravityK * radius...
+  gravityMax: 45,       // ...capped here (gas giants hit the cap)
+  sunGravity: 30,       // sun surface gravity (own value; it's special)
   playerRadius: 0.5,
   walkSpeed: 8,
   walkAccel: 45,
   friction: 9,
   jumpSpeed: 9.5,
-  airNudge: 4,          // WASD mid-air accel
-  airNudgeCap: 22,      // max speed the nudge can push toward
-  ropeReel: 8,          // W/S reel speed while grappled (m/s)
-  grappleRange: 150,
+  airNudge: 4,
+  airNudgeCap: 22,
+  jetThrust: 28,        // jetpack acceleration along look dir
+  heatRate: 0.26,       // heat per second thrusting (1.0 = overheat)
+  coolRate: 0.34,       // cooling per second idle
+  overheatUnlock: 0.35, // must cool below this after overheating
+  ropeReel: 14,
+  grappleRange: 280,
+  stiffRope: true,      // rigid rod: constrains both stretch AND compress
   buildRange: 14,
   camDist: 7,
   camLerp: 0.12,
-  upBlend: 3.5,         // how fast camera "up" adapts near asteroids
-  drag: 0.995,
-  respawnDist: 550
+  upBlend: 3.5,
+  drag: 0.9995,
+  boundsDist: 32000,
+  // scale rulers
+  AU: 1200,             // 1 astronomical unit in game units
+  earthR: 60            // Earth radius in game units; others keep real ratios
 };
 
 const canvas = document.getElementById('c');
@@ -157,48 +182,44 @@ window.addEventListener('error', ev => {
   errBox.style.display = 'block';
   errBox.textContent = 'ERROR: ' + ev.message + (ev.lineno ? ' @line '+ev.lineno : '');
 });
-const renderer = new THREE.WebGLRenderer({canvas, antialias:true});
+
+const renderer = new THREE.WebGLRenderer({canvas, antialias:true, logarithmicDepthBuffer:true});
 renderer.setPixelRatio(Math.min(window.devicePixelRatio,2));
 renderer.setSize(window.innerWidth, window.innerHeight);
-renderer.setClearColor(0x080814);
+renderer.setClearColor(0x05050e);
 
 const scene = new THREE.Scene();
-scene.fog = new THREE.FogExp2(0x080814, 0.0028);
+const camera = new THREE.PerspectiveCamera(72, window.innerWidth/window.innerHeight, 0.1, 90000);
 
-const camera = new THREE.PerspectiveCamera(72, window.innerWidth/window.innerHeight, 0.1, 1200);
+// Lighting: the sun is the light source (point light, no falloff)
+scene.add(new THREE.AmbientLight(0x8899cc, 0.28));
+const sunLight = new THREE.PointLight(0xfff0d8, 2.6, 0, 0);
+sunLight.position.set(0,0,0);
+scene.add(sunLight);
 
-// Lighting
-scene.add(new THREE.AmbientLight(0x8899cc, 0.45));
-const sun = new THREE.DirectionalLight(0xffffff, 1.2);
-sun.position.set(60,120,80);
-scene.add(sun);
-const fill = new THREE.DirectionalLight(0x4466ff, 0.35);
-fill.position.set(-40,-30,-60);
-scene.add(fill);
-
-// Stars
+// Star shell that follows the camera (parallax-free sky)
 const starVerts = [];
-for(let i=0;i<1600;i++){
-  const r = 350+Math.random()*400;
+for(let i=0;i<2200;i++){
+  const r = 8000;
   const theta = Math.random()*Math.PI*2;
   const phi = Math.acos(2*Math.random()-1);
   starVerts.push(r*Math.sin(phi)*Math.cos(theta), r*Math.cos(phi), r*Math.sin(phi)*Math.sin(theta));
 }
 const starGeo = new THREE.BufferGeometry();
 starGeo.setAttribute('position', new THREE.Float32BufferAttribute(starVerts,3));
-scene.add(new THREE.Points(starGeo, new THREE.PointsMaterial({color:0xffffff,size:0.9,sizeAttenuation:true})));
+const stars = new THREE.Points(starGeo, new THREE.PointsMaterial({color:0xffffff,size:1.6,sizeAttenuation:false}));
+scene.add(stars);
 
 // ============================================================
-// Asteroids — big, procedural, walkable.
-// Geometry displacement and player collision share shapeFn,
-// so the analytic surface always matches the visible mesh.
+// Bodies — the solar system at relative scale.
+// Radii keep true ratios (Earth = 60). Distances: 1 AU = 1200.
 // ============================================================
 function seededRand(seed) {
   const x = Math.sin(seed*127.1 + 311.7) * 43758.5453;
   return x - Math.floor(x);
 }
 
-function makeShapeFn(seed) {
+function makeShapeFn(seed, roughness) {
   const ks = [];
   for(let i=0;i<3;i++){
     const v = new THREE.Vector3(
@@ -208,82 +229,168 @@ function makeShapeFn(seed) {
     ).normalize().multiplyScalar(2.5 + seededRand(seed*31+i)*3.5);
     ks.push(v);
   }
-  const amps = [0.10, 0.06, 0.035].map((a,i)=>a*(0.8+seededRand(seed*41+i)*0.5));
+  const amps = [0.10, 0.06, 0.035].map((a,i)=>a*roughness*(0.8+seededRand(seed*41+i)*0.5));
   return dir => 1 + amps[0]*Math.sin(dir.dot(ks[0]))
                   + amps[1]*Math.sin(dir.dot(ks[1]))
                   + amps[2]*Math.sin(dir.dot(ks[2]));
 }
 
-const ASTEROID_DEFS = [
-  { pos:[   0, -40,    0], R:30, hue:0.07 },
-  { pos:[  90,  10,  -30], R:22, hue:0.09 },
-  { pos:[ -70,  30,   60], R:18, hue:0.05 },
-  { pos:[  30,  80,   95], R:26, hue:0.11 },
-  { pos:[ -60, -25, -110], R:20, hue:0.46 },
-  { pos:[ 145,  65,   70], R:16, hue:0.08 }
-];
-
-const asteroids = [];
-const asteroidMeshes = [];
-const tmpDir = new THREE.Vector3();
-
-ASTEROID_DEFS.forEach((def, idx) => {
-  const shapeFn = makeShapeFn(idx*100+17);
-  const detail = def.R > 24 ? 4 : 3;
-  const geo = new THREE.IcosahedronGeometry(def.R, detail);
-  const posAttr = geo.getAttribute('position');
-  const v = new THREE.Vector3();
-  for(let i=0;i<posAttr.count;i++){
-    v.fromBufferAttribute(posAttr, i).normalize();
-    const r = def.R * shapeFn(v);
-    posAttr.setXYZ(i, v.x*r, v.y*r, v.z*r);
-  }
-  geo.computeVertexNormals();
-  const col = new THREE.Color().setHSL(def.hue, 0.18, 0.32 + seededRand(idx*3)*0.08);
-  const mat = new THREE.MeshLambertMaterial({color:col, flatShading:true});
-  const mesh = new THREE.Mesh(geo, mat);
-  mesh.position.set(def.pos[0], def.pos[1], def.pos[2]);
-  scene.add(mesh);
-  const a = { center: mesh.position, R: def.R, shapeFn, mesh };
-  asteroids.push(a);
-  asteroidMeshes.push(mesh);
-});
-
-function nearestAsteroid(p) {
-  let best=null, bestSurf=Infinity;
-  for(const a of asteroids){
-    tmpDir.copy(p).sub(a.center);
-    const dCenter = tmpDir.length();
-    const surfR = a.R * a.shapeFn(tmpDir.clone().normalize());
-    const dSurf = dCenter - surfR;
-    if(dSurf < bestSurf){ bestSurf = dSurf; best = {a, dCenter, surfR, dSurf}; }
-  }
-  return best;
+const kmToUnits = km => km/6371*CONFIG.earthR;
+const deg = d => d*Math.PI/180;
+function orbitPos(au, angleDeg, y) {
+  return new THREE.Vector3(Math.cos(deg(angleDeg))*au*CONFIG.AU, y, Math.sin(deg(angleDeg))*au*CONFIG.AU);
 }
 
-// Decorative tumbling debris (homage to the old sandbox shapes)
-const palette = [0x7744ee,0x11bb88,0x2299ee,0xdd8811,0xcc2277,0x44ccaa];
-const debris = [];
-for(let i=0;i<40;i++){
-  const seed = i*17+3;
-  const sz = 0.5 + seededRand(seed)*1.2;
-  const t = i%3;
-  const geo = t===0 ? new THREE.OctahedronGeometry(sz)
-            : t===1 ? new THREE.TetrahedronGeometry(sz)
-            : new THREE.BoxGeometry(sz,sz,sz);
-  const mesh = new THREE.Mesh(geo, new THREE.MeshLambertMaterial({color:palette[i%palette.length]}));
-  mesh.position.set(
-    (seededRand(seed*3)-0.5)*380,
-    (seededRand(seed*5)-0.5)*300,
-    (seededRand(seed*7)-0.5)*380
-  );
-  mesh.userData.rot = new THREE.Vector3(
-    (seededRand(seed*11)-0.5)*0.01,
-    (seededRand(seed*13)-0.5)*0.015,
-    (seededRand(seed*17)-0.5)*0.008
-  );
+// Palettes for gas giant latitude bands
+const GAS_PALETTES = {
+  jupiter: ['#c9a06f','#e8d5b0','#a9744a','#e0c298','#8f5a3a','#d9b98a'],
+  saturn:  ['#e6d3a3','#d8c090','#c9b083','#efe2bf'],
+  uranus:  ['#8fd3dd','#7cc4d4','#a3e0e6']
+};
+
+const BODY_DEFS = [
+  { name:'SUN',    star:true, R:300, pos:new THREE.Vector3(0,0,0) },
+  { name:'VENUS',  type:'rocky', km:6052,  au:0.72, ang:160, y:  80,  paint:'venus'  },
+  { name:'EARTH',  type:'rocky', km:6371,  au:1.00, ang:180, y:   0,  paint:'earth'  },
+  { name:'MARS',   type:'rocky', km:3390,  au:1.52, ang:195, y: -120, paint:'mars'   },
+  { name:'JUPITER',type:'gas',   km:69911, au:5.20, ang:205, y:  200, paint:'jupiter', bands:12 },
+  { name:'SATURN', type:'gas',   km:58232, au:9.50, ang:215, y: -260, paint:'saturn',  bands:9, rings:[[1.24,1.72],[1.78,2.1]], ringTilt:27 },
+  { name:'URANUS', type:'gas',   km:25362, au:19.2, ang:222, y:  350, paint:'uranus',  bands:5, rings:[[1.4,1.55]], ringTilt:98 }
+];
+
+const bodies = [];       // { name, center, R, shapeFn|null, g, deadly, mesh }
+const bodyMeshes = [];   // grapple/build raycast targets (incl. rings)
+const tmpDir = new THREE.Vector3();
+
+function paintVertex(paint, dir, h, seed) {
+  const c = new THREE.Color();
+  if(paint==='earth') {
+    if(Math.abs(dir.y) > 0.86) c.set('#e8eef2');            // polar caps
+    else if(h > 1.025) c.set('#4d7c3a').lerp(new THREE.Color('#8a6f42'), (h-1.025)*9);  // land
+    else if(h > 1.005) c.set('#c9bd8a');                     // coast
+    else c.set('#1d4e79').lerp(new THREE.Color('#153a5e'), seededRand(seed)*0.5);       // ocean
+  } else if(paint==='mars') {
+    c.set('#a14f2c').lerp(new THREE.Color('#6e3018'), Math.min(1,Math.max(0,(h-0.9)*3)));
+    if(Math.abs(dir.y) > 0.9) c.set('#d8cfc2');
+  } else if(paint==='venus') {
+    c.set('#d8c07a').lerp(new THREE.Color('#b09048'), Math.min(1,Math.max(0,(h-0.95)*4)));
+  } else {
+    c.set('#888880');
+  }
+  return c;
+}
+
+function gasBandColor(paint, dir, bands, seed) {
+  const pal = GAS_PALETTES[paint];
+  const lat = Math.asin(Math.max(-1,Math.min(1,dir.y)));
+  const lon = Math.atan2(dir.z, dir.x);
+  const wobble = 0.3*Math.sin(lon*3 + lat*7 + seed) + 0.15*Math.sin(lon*7 - lat*11);
+  const idx = Math.abs(Math.floor((lat/Math.PI + 0.5)*bands + wobble)) % pal.length;
+  return new THREE.Color(pal[idx]);
+}
+
+function addBody(def) {
+  const R = def.star ? def.R : kmToUnits(def.km);
+  const center = def.star ? def.pos.clone() : orbitPos(def.au, def.ang, def.y);
+  let mesh, shapeFn = null;
+
+  if(def.star) {
+    mesh = new THREE.Mesh(
+      new THREE.IcosahedronGeometry(R, 3),
+      new THREE.MeshBasicMaterial({color:0xffd27a})
+    );
+  } else if(def.type === 'rocky') {
+    shapeFn = makeShapeFn(def.name.length*37+5, 1.0);
+    const detail = R > 200 ? 5 : (R > 40 ? 4 : 3);
+    const geo = new THREE.IcosahedronGeometry(R, detail);
+    const posAttr = geo.getAttribute('position');
+    const colors = new Float32Array(posAttr.count*3);
+    const v = new THREE.Vector3();
+    for(let i=0;i<posAttr.count;i++){
+      v.fromBufferAttribute(posAttr, i).normalize();
+      const h = shapeFn(v);
+      posAttr.setXYZ(i, v.x*R*h, v.y*R*h, v.z*R*h);
+      const col = paintVertex(def.paint, v, h, i);
+      colors[i*3]=col.r; colors[i*3+1]=col.g; colors[i*3+2]=col.b;
+    }
+    geo.setAttribute('color', new THREE.Float32BufferAttribute(colors,3));
+    geo.computeVertexNormals();
+    mesh = new THREE.Mesh(geo, new THREE.MeshLambertMaterial({vertexColors:true, flatShading:true}));
+  } else { // gas giant: smooth, banded
+    const geo = new THREE.IcosahedronGeometry(R, 4);
+    const posAttr = geo.getAttribute('position');
+    const colors = new Float32Array(posAttr.count*3);
+    const v = new THREE.Vector3();
+    const seed = def.name.length*3;
+    for(let i=0;i<posAttr.count;i++){
+      v.fromBufferAttribute(posAttr, i).normalize();
+      const col = gasBandColor(def.paint, v, def.bands, seed);
+      colors[i*3]=col.r; colors[i*3+1]=col.g; colors[i*3+2]=col.b;
+    }
+    geo.setAttribute('color', new THREE.Float32BufferAttribute(colors,3));
+    mesh = new THREE.Mesh(geo, new THREE.MeshLambertMaterial({vertexColors:true, flatShading:false}));
+  }
+
+  mesh.position.copy(center);
   scene.add(mesh);
-  debris.push(mesh);
+  bodyMeshes.push(mesh);
+
+  // Rings (Saturn, Uranus): decorative + grapple anchors
+  if(def.rings) {
+    for(const [ri, ro] of def.rings) {
+      const ringGeo = new THREE.RingGeometry(R*ri, R*ro, 96);
+      const ringMat = new THREE.MeshLambertMaterial({color:0xd8c9a3, side:THREE.DoubleSide, transparent:true, opacity:0.72});
+      const ringMesh = new THREE.Mesh(ringGeo, ringMat);
+      ringMesh.position.copy(center);
+      ringMesh.rotation.x = deg(90 - def.ringTilt);
+      scene.add(ringMesh);
+      bodyMeshes.push(ringMesh);
+    }
+  }
+
+  const g = def.star ? CONFIG.sunGravity : Math.min(CONFIG.gravityK*R, CONFIG.gravityMax);
+  const body = { name:def.name, center:mesh.position, R, shapeFn, g, deadly:!!def.star, gas:def.type==='gas', mesh };
+  bodies.push(body);
+  return body;
+}
+
+BODY_DEFS.forEach(addBody);
+
+// Asteroid belt: scattered rocks between Mars and Jupiter
+for(let i=0;i<28;i++){
+  const seed = i*53+9;
+  const ang = 185 + seededRand(seed)*35;
+  const au = 2.2 + seededRand(seed*3)*1.1;
+  const y = (seededRand(seed*5)-0.5)*600;
+  const R = 6 + seededRand(seed*7)*16;
+  const shapeFn = makeShapeFn(seed, 1.4);
+  const geo = new THREE.IcosahedronGeometry(R, 3);
+  const posAttr = geo.getAttribute('position');
+  const v = new THREE.Vector3();
+  for(let j=0;j<posAttr.count;j++){
+    v.fromBufferAttribute(posAttr, j).normalize();
+    const r = R*shapeFn(v);
+    posAttr.setXYZ(j, v.x*r, v.y*r, v.z*r);
+  }
+  geo.computeVertexNormals();
+  const col = new THREE.Color().setHSL(0.07+seededRand(seed*11)*0.05, 0.15, 0.3+seededRand(seed*13)*0.1);
+  const mesh = new THREE.Mesh(geo, new THREE.MeshLambertMaterial({color:col, flatShading:true}));
+  mesh.position.copy(orbitPos(au, ang, y));
+  scene.add(mesh);
+  bodyMeshes.push(mesh);
+  bodies.push({ name:'BELT ROCK', center:mesh.position, R, shapeFn, g:Math.min(CONFIG.gravityK*R, CONFIG.gravityMax), deadly:false, gas:false, mesh });
+}
+
+function nearestBody(p) {
+  let best=null, bestSurf=Infinity;
+  for(const b of bodies){
+    tmpDir.copy(p).sub(b.center);
+    const dCenter = tmpDir.length();
+    const surfR = b.shapeFn ? b.R * b.shapeFn(tmpDir.clone().normalize()) : b.R;
+    const dSurf = dCenter - surfR;
+    if(dSurf < bestSurf){ bestSurf = dSurf; best = {b, dCenter, surfR, dSurf}; }
+  }
+  return best;
 }
 
 // ============================================================
@@ -295,7 +402,7 @@ const player = new THREE.Mesh(
 );
 scene.add(player);
 
-const trailPts = Array.from({length:24}, ()=>new THREE.Vector3());
+const trailPts = Array.from({length:40}, ()=>new THREE.Vector3());
 const trailGeo = new THREE.BufferGeometry().setFromPoints(trailPts);
 scene.add(new THREE.Line(trailGeo, new THREE.LineBasicMaterial({color:0x4466ff,transparent:true,opacity:0.3})));
 
@@ -328,7 +435,7 @@ const BLOCK_TYPES = [
   { name:'BEACON',   half:new THREE.Vector3(0.35,1.0,0.35), make:()=>new THREE.CylinderGeometry(0.14,0.35,2,8), color:0x332200, emissive:0xffdd33 }
 ];
 let selectedBlock = 0;
-const blocks = [];       // { mesh, half }
+const blocks = [];
 const blockMeshes = [];
 
 const ghost = new THREE.Mesh(
@@ -349,7 +456,7 @@ const raycaster = new THREE.Raycaster();
 function aimHit(range, includeBlocks) {
   raycaster.set(camera.position, getLookDir());
   raycaster.far = range + CONFIG.camDist + 10;
-  const targets = includeBlocks ? asteroidMeshes.concat(blockMeshes) : asteroidMeshes;
+  const targets = includeBlocks ? bodyMeshes.concat(blockMeshes) : bodyMeshes;
   const hits = raycaster.intersectObjects(targets, false);
   for(const h of hits){
     if(h.point.distanceTo(player.position) <= range) return h;
@@ -396,8 +503,11 @@ let grounded = false;
 let jumpQueued = false;
 let locked = false;
 const keys = {};
+let heat = 0;
+let overheated = false;
+let gMag = 0;
 
-// Camera basis: smoothed local "up" so walking around asteroids feels right
+// Camera basis: smoothed local "up"
 const camUp = new THREE.Vector3(0,1,0);
 const camRight = new THREE.Vector3(1,0,0);
 let camForward = new THREE.Vector3(0,0,-1);
@@ -415,16 +525,19 @@ const statsEl = document.getElementById('stats');
 const grapstat = document.getElementById('grapstat');
 const modestat = document.getElementById('modestat');
 const dot = document.getElementById('dot');
+const heatfill = document.getElementById('heatfill');
+const heatBox = document.getElementById('heat');
 
-// Spawn on top of the first asteroid
-const spawnAsteroid = asteroids[0];
+// Spawn on top of Earth
+const earth = bodies.find(b=>b.name==='EARTH');
 const spawnDir = new THREE.Vector3(0,1,0);
-const spawnPoint = spawnAsteroid.center.clone().addScaledVector(
-  spawnDir, spawnAsteroid.R * spawnAsteroid.shapeFn(spawnDir) + CONFIG.playerRadius + 0.5
+const spawnPoint = earth.center.clone().addScaledVector(
+  spawnDir, earth.R * earth.shapeFn(spawnDir) + CONFIG.playerRadius + 0.5
 );
 function respawn(){
   player.position.copy(spawnPoint);
   vel.set(0,0,0);
+  heat = 0; overheated = false;
   releaseGrapple();
 }
 respawn();
@@ -433,7 +546,6 @@ for(const p of trailPts) p.copy(player.position);
 // ============================================================
 // Input
 // ============================================================
-
 function attachGrapple() {
   const hit = aimHit(CONFIG.grappleRange, true);
   if(hit) {
@@ -507,6 +619,7 @@ let last = performance.now();
 let frameCount = 0;
 const scratch = new THREE.Vector3();
 const scratch2 = new THREE.Vector3();
+const gAccum = new THREE.Vector3();
 
 function animate(now) {
   requestAnimationFrame(animate);
@@ -514,12 +627,12 @@ function animate(now) {
   last = now;
   frameCount++;
 
-  // --- nearest asteroid + local up ---
-  const near = nearestAsteroid(player.position);
-  const localUp = scratch.copy(player.position).sub(near.a.center).normalize().clone();
+  // --- nearest body + local up ---
+  const near = nearestBody(player.position);
+  const localUp = scratch.copy(player.position).sub(near.b.center).normalize().clone();
 
   // --- camera basis update ---
-  const desiredUp = (near.dSurf < near.a.R*1.4) ? localUp : new THREE.Vector3(0,1,0);
+  const desiredUp = (near.dSurf < Math.max(50, near.b.R*1.2)) ? localUp : new THREE.Vector3(0,1,0);
   const blend = 1 - Math.exp(-CONFIG.upBlend*dt);
   camUp.lerp(desiredUp, blend).normalize();
   if(yawDelta !== 0){ camRight.applyAxisAngle(camUp, yawDelta); yawDelta = 0; }
@@ -527,12 +640,31 @@ function animate(now) {
   camForward = new THREE.Vector3().crossVectors(camUp, camRight);
   const look = getLookDir();
 
-  // --- gravity toward nearest asteroid ---
-  const gStrength = CONFIG.gravity * Math.min(1, (near.a.R / Math.max(near.dCenter, near.a.R))**2);
-  vel.addScaledVector(localUp, -gStrength*dt);
+  // --- n-body gravity: every body pulls, inverse square ---
+  gAccum.set(0,0,0);
+  for(const b of bodies){
+    scratch2.copy(b.center).sub(player.position);
+    const d = scratch2.length();
+    const g = b.g * (b.R / Math.max(d, b.R))**2;
+    if(g < 0.02) continue;
+    gAccum.addScaledVector(scratch2.normalize(), g);
+  }
+  gMag = gAccum.length();
+  vel.addScaledVector(gAccum, dt);
+
+  // --- jetpack (overheat system) ---
+  const thrusting = (keys['ShiftLeft']||keys['ShiftRight']) && !overheated;
+  if(thrusting) {
+    vel.addScaledVector(look, CONFIG.jetThrust*dt);
+    heat = Math.min(1, heat + CONFIG.heatRate*dt);
+    if(heat >= 1) overheated = true;
+  } else {
+    heat = Math.max(0, heat - CONFIG.coolRate*dt);
+    if(overheated && heat <= CONFIG.overheatUnlock) overheated = false;
+  }
 
   // --- movement input ---
-  if(grounded && !grappled) {
+  if(grounded && !grappled && !thrusting) {
     const vUpAmt = vel.dot(localUp);
     const vUp = scratch2.copy(localUp).multiplyScalar(vUpAmt);
     const vT = vel.clone().sub(vUp);
@@ -553,7 +685,6 @@ function animate(now) {
     vel.copy(vT).addScaledVector(localUp, vUpAmt);
     if(jumpQueued) vel.addScaledVector(localUp, CONFIG.jumpSpeed);
   } else if(grappled) {
-    // reel with W/S, nudge with A/D
     if(keys['KeyW']) ropeLen = Math.max(2, ropeLen - CONFIG.ropeReel*dt);
     if(keys['KeyS']) ropeLen = Math.min(CONFIG.grappleRange, ropeLen + CONFIG.ropeReel*dt);
     [['KeyA',-1],['KeyD',1]].forEach(([k,s])=>{
@@ -562,8 +693,7 @@ function animate(now) {
       const proj = vel.clone().projectOnVector(dir);
       if(proj.lengthSq() < CONFIG.airNudgeCap**2) vel.addScaledVector(dir, CONFIG.airNudge*dt);
     });
-  } else {
-    // free-fall nudge
+  } else if(!thrusting) {
     [['KeyW',look,1],['KeyS',look,-1],['KeyA',camRight,-1],['KeyD',camRight,1]].forEach(([k,base,s])=>{
       if(!keys[k]) return;
       const dir = base.clone().multiplyScalar(s);
@@ -576,17 +706,21 @@ function animate(now) {
   vel.multiplyScalar(CONFIG.drag);
   player.position.addScaledVector(vel, dt);
 
-  // --- asteroid surface collision (analytic, matches mesh) ---
+  // --- body surface collision (analytic; sun is deadly) ---
   grounded = false;
   {
-    const n2 = nearestAsteroid(player.position);
-    const dir = player.position.clone().sub(n2.a.center).normalize();
-    const surfR = n2.a.R * n2.a.shapeFn(dir);
+    const n2 = nearestBody(player.position);
+    const dir = player.position.clone().sub(n2.b.center).normalize();
+    const surfR = n2.b.shapeFn ? n2.b.R * n2.b.shapeFn(dir) : n2.b.R;
     const dSurf = n2.dCenter - surfR - CONFIG.playerRadius;
-    if(dSurf <= 0.03) {
-      player.position.copy(n2.a.center).addScaledVector(dir, surfR + CONFIG.playerRadius);
+    if(n2.b.deadly && dSurf < 80) { respawn(); }
+    else if(dSurf <= 0.03) {
+      player.position.copy(n2.b.center).addScaledVector(dir, surfR + CONFIG.playerRadius);
       const radial = vel.dot(dir);
-      if(radial < 0) vel.addScaledVector(dir, -radial);
+      if(radial < 0) {
+        const restitution = n2.b.gas ? 0.3 : 0;   // cloud decks bounce a little
+        vel.addScaledVector(dir, -radial*(1+restitution));
+      }
       grounded = true;
     }
   }
@@ -607,26 +741,28 @@ function animate(now) {
       player.position.addScaledVector(pushWorld, CONFIG.playerRadius - d);
       const vn = vel.dot(pushWorld);
       if(vn < 0) vel.addScaledVector(pushWorld, -vn);
-      const upLocal = player.position.clone().sub(near.a.center).normalize();
+      const upLocal = player.position.clone().sub(near.b.center).normalize();
       if(pushWorld.dot(upLocal) > 0.5) grounded = true;
     }
   }
 
-  // --- rope constraint ---
+  // --- rope constraint (stiff rod: resists stretch AND compression) ---
   if(grappled) {
     const diff = player.position.clone().sub(anchorPt);
     const dist = diff.length();
-    if(dist > ropeLen) {
+    const violates = CONFIG.stiffRope ? Math.abs(dist - ropeLen) > 0.001 : dist > ropeLen;
+    if(violates && dist > 0.001) {
       const dir = diff.normalize();
       player.position.copy(anchorPt).addScaledVector(dir, ropeLen);
       const radial = vel.dot(dir);
-      if(radial > 0) vel.addScaledVector(dir, -radial);
+      if(CONFIG.stiffRope) vel.addScaledVector(dir, -radial);
+      else if(radial > 0) vel.addScaledVector(dir, -radial);
     }
-    grapstat.textContent = `r: ${ropeLen.toFixed(1)}m · GRAPPLED`;
+    grapstat.textContent = `r: ${ropeLen.toFixed(1)}m · LATCHED`;
   }
 
-  // --- out-of-bounds respawn ---
-  if(player.position.length() > CONFIG.respawnDist) respawn();
+  // --- out-of-bounds ---
+  if(player.position.length() > CONFIG.boundsDist) respawn();
 
   // --- trail ---
   trailPts.pop();
@@ -641,15 +777,16 @@ function animate(now) {
     }
     const tip = player.position.clone().lerp(anchorPt, ropeAnimT);
     const sagDir = localUp.clone().negate();
+    const sagScale = CONFIG.stiffRope ? 0.12 : 1.2;
     for(let i=0;i<ROPE_SEGS;i++){
       const f = i/(ROPE_SEGS-1);
-      const sag = Math.sin(Math.PI*f)*Math.max(0, 1.2*(1-vel.length()*0.02));
+      const sag = Math.sin(Math.PI*f)*Math.max(0, sagScale*(1-vel.length()*0.02));
       ropePts[i].lerpVectors(player.position, tip, f).addScaledVector(sagDir, sag);
     }
     ropeGeo.setFromPoints(ropePts);
   }
 
-  // --- aim feedback: grapple target ring / build ghost ---
+  // --- aim feedback ---
   const buildHit = aimHit(CONFIG.buildRange, true);
   if(buildHit && !grappled) {
     const t = BLOCK_TYPES[selectedBlock];
@@ -676,13 +813,6 @@ function animate(now) {
     dot.setAttribute('stroke','#ffdd33');
   }
 
-  // --- debris ---
-  for(const d of debris){
-    d.rotation.x += d.userData.rot.x;
-    d.rotation.y += d.userData.rot.y;
-    d.rotation.z += d.userData.rot.z;
-  }
-
   // --- camera ---
   const idealCamPos = player.position.clone()
     .addScaledVector(look, -camDist)
@@ -690,14 +820,20 @@ function animate(now) {
   camera.position.lerp(idealCamPos, CONFIG.camLerp);
   camera.up.copy(camUp);
   camera.lookAt(player.position.clone().addScaledVector(look, 10));
+  stars.position.copy(camera.position);
 
   // --- HUD ---
   if(frameCount%6===0) {
     const speed = vel.length();
-    modestat.textContent = grounded ? 'GROUNDED' : (grappled ? 'SWINGING' : 'DRIFTING');
+    const mode = grounded ? 'GROUNDED' : (grappled ? 'LATCHED' : 'DRIFTING');
+    const dShow = near.dSurf > 999 ? (near.dSurf/1000).toFixed(1)+'km' : Math.max(0,near.dSurf).toFixed(0)+'m';
     statsEl.innerHTML = `v: ${speed.toFixed(1)} m/s<br>`
-      + `<span style="color:#8fa">${modestat.textContent} · blocks: ${blocks.length}</span><br>`
-      + `<span style="color:#ffdd33">${grapstat.textContent}</span>`;
+      + `<span style="color:#8fa">${near.b.name} · ${dShow} · g ${gMag.toFixed(1)} · blocks ${blocks.length}</span><br>`
+      + `<span style="color:#ffdd33">${mode==='LATCHED' ? grapstat.textContent : mode}</span>`;
+    heatfill.style.width = (heat*100).toFixed(0)+'%';
+    heatfill.style.background = overheated ? '#ff4433' : '#ffdd33';
+    heatBox.style.color = overheated ? '#ff4433' : '#889';
+    heatBox.firstChild.textContent = overheated ? 'OVERHEATED' : 'JETPACK';
   }
 
   renderer.render(scene, camera);
