@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
-<title>SOLAR SWING — v0.4</title>
+<title>SOLAR SWING — v0.5</title>
 <style>
   * { margin:0; padding:0; box-sizing:border-box; }
   body { background:#04040c; overflow:hidden; font-family:'Courier New',monospace; touch-action:none; -webkit-user-select:none; user-select:none; }
@@ -111,7 +111,7 @@
 
 <div id="start">
   <h1>SOLAR SWING</h1>
-  <p>v0.4 &middot; jetpack &amp; orbits &middot; mercury to pluto</p>
+  <p>v0.5 &middot; beautiful orbits &middot; mercury to pluto</p>
   <p id="startHelp" style="color:#666;font-size:11px;">
     HOLD CLICK or SHIFT to burn &middot; aim with mouse &middot; heat is your fuel<br>
     you cannot out-thrust a big planet &mdash; burn sideways, skim, and let the world curve away<br>
@@ -154,10 +154,17 @@
 <div class="tbtn" id="btnReset">RESET</div>
 
 <script type="importmap">
-{ "imports": { "three": "https://cdn.jsdelivr.net/npm/three@0.164.1/build/three.module.js" } }
+{ "imports": {
+  "three": "https://cdn.jsdelivr.net/npm/three@0.164.1/build/three.module.js",
+  "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.164.1/examples/jsm/"
+} }
 </script>
 <script type="module">
 import * as THREE from 'three';
+import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 
 // ============================================================
 // CONFIG — all game-feel tuning lives here. Iterate here first.
@@ -183,13 +190,49 @@ const CONFIG = {
   drag: 1.0,             // vacuum: orbits must not decay (atmospheres brake instead)
   gasInteriorDrag: 0.8,  // soup, but a fast Oberth dive-through survives it
   boundsDist: 200000,
-  // trajectory prediction
+  // trajectory prediction (adaptive since v0.5)
   predictSteps: 360,
-  predictDt: 0.09,       // ~32s lookahead
+  predictDtBase: 0.09,   // step scales with distance to the nearest body's reach
+  predictDtMin: 0.04,
+  predictDtMax: 1.2,
+  // orbit aids (v0.5 item 4)
+  orbitAngle: 330*Math.PI/180,      // swept angle needed to call a path a closed orbit
+  orbitSweptGate: 300*Math.PI/180,  // only test "back near start radius" past this sweep
+  orbitRadTol: 0.08,                // ...and within 8% of the starting radius
+  periShowFrac: 0.9,                // hide the periapsis dot unless it's below us
+  periScale: 0.012,                 // marker radius as a fraction of distance to camera
+  predColorImpact: '#ff5544',
+  predColorOrbit:  '#4dd68a',
+  predColorCoast:  '#66aaff',
   // touch controls
   lookRate: 2.6,         // rad/s at full stick
   stickDead: 0.12,
   stickRadius: 55,
+  // terrain detail (v0.5 item 1)
+  terrainAmps: [0.10, 0.06, 0.035, 0.018, 0.009], // octave amplitudes (fraction of R)
+  terrainHiFreqMult: 2.6,   // frequency multiplier for the two new fine octaves
+  // craters (MERCURY + PLUTO only) — baked into shapeFn so collision matches the mesh
+  craterCountMin: 6,
+  craterCountMax: 10,
+  craterRadMin: 0.12,       // angular radius, radians
+  craterRadMax: 0.20,
+  craterDepthMin: 0.02,     // bowl depth as a fraction of R
+  craterDepthMax: 0.04,
+  craterRimHeight: 0.3,     // raised rim, as a fraction of crater depth
+  craterRimWidth: 0.35,     // rim falloff width, as a fraction of crater radius
+  craterDetail: 5,          // icosahedron detail for cratered bodies (bowls need the verts)
+  // gas giant bands
+  gasTurb: 1.35,            // band-edge turbulence multiplier
+  gasWobble3: 0.09,         // third (high-frequency) wobble amplitude
+  // atmosphere shells (v0.5 item 2)
+  atmoFalloff: 2.5,         // fresnel exponent — higher = tighter rim
+  atmoStrengthMult: 1.8,    // scales each atmo's glow into shader strength
+  atmoGasStrength: 0.22,    // subtle limb for gas giants
+  skyTintMax: 0.35,         // max screen tint opacity inside a tinted atmosphere
+  // bloom — desktop only (v0.5 item 3)
+  bloomStrength: 0.55,
+  bloomRadius: 0.4,
+  bloomThreshold: 0.82,     // luminance cut, applied to linear (pre-tone-map) values
   // scale rulers — radii keep real ratios, distances compressed
   AU: 3600,
   earthR: 160
@@ -219,10 +262,28 @@ const scene = new THREE.Scene();
 const camera = new THREE.PerspectiveCamera(72, window.innerWidth/window.innerHeight, 0.1, 400000);
 
 // Soft lighting: sun point light (key) + hemisphere fill
-const sunLight = new THREE.PointLight(0xfff0d8, 2.4, 0, 0);
+const sunLight = new THREE.PointLight(0xfff0d8, 3.0, 0, 0);
 sunLight.position.set(0,0,0);
 scene.add(sunLight);
-scene.add(new THREE.HemisphereLight(0x90a0c0, 0x1a1410, 0.45));
+scene.add(new THREE.HemisphereLight(0x90a0c0, 0x1a1410, 0.3));
+
+// Desktop-only bloom pipeline.
+// OutputPass is load-bearing, not decoration: three only applies tone mapping when a
+// material renders straight to the screen (WebGLPrograms checks currentRenderTarget ===
+// null). RenderPass draws into the composer's HalfFloat target, so ACES never runs there
+// and the buffer holds raw linear HDR. OutputPass applies ACES + the sRGB transfer at the
+// end, reproducing exactly what the untouched mobile renderer.render() path does. Drop it
+// and the desktop render is washed out and diverges from mobile.
+let composer = null;
+if(!isTouch) {
+  composer = new EffectComposer(renderer);
+  composer.addPass(new RenderPass(scene, camera));
+  composer.addPass(new UnrealBloomPass(
+    new THREE.Vector2(window.innerWidth, window.innerHeight),
+    CONFIG.bloomStrength, CONFIG.bloomRadius, CONFIG.bloomThreshold
+  ));
+  composer.addPass(new OutputPass());
+}
 
 // Star shell that follows the camera
 const starVerts = [];
@@ -260,20 +321,60 @@ function seededRand(seed) {
   return x - Math.floor(x);
 }
 
-function makeShapeFn(seed, roughness) {
+// Displacement field. The returned function (dir => radius multiplier) is the SINGLE
+// source of truth for both mesh geometry and analytic collision — signature is fixed.
+function makeShapeFn(seed, roughness, cratered) {
   const ks = [];
-  for(let i=0;i<3;i++){
+  for(let i=0;i<CONFIG.terrainAmps.length;i++){
+    const fine = i >= 3; // octaves 4-5: finer relief on top of the original silhouette
     const v = new THREE.Vector3(
       seededRand(seed*7+i)-0.5,
       seededRand(seed*13+i)-0.5,
       seededRand(seed*29+i)-0.5
-    ).normalize().multiplyScalar(2.5 + seededRand(seed*31+i)*3.5);
+    ).normalize().multiplyScalar((2.5 + seededRand(seed*31+i)*3.5) * (fine ? CONFIG.terrainHiFreqMult : 1));
     ks.push(v);
   }
-  const amps = [0.10, 0.06, 0.035].map((a,i)=>a*roughness*(0.8+seededRand(seed*41+i)*0.5));
-  return dir => 1 + amps[0]*Math.sin(dir.dot(ks[0]))
-                  + amps[1]*Math.sin(dir.dot(ks[1]))
-                  + amps[2]*Math.sin(dir.dot(ks[2]));
+  const amps = CONFIG.terrainAmps.map((a,i)=>a*roughness*(0.8+seededRand(seed*41+i)*0.5));
+
+  // Seeded crater bowls. Each is a smooth depression with a slight raised rim; both the
+  // bowl and the rim land with a flat tangent so nothing cliffs at the edges.
+  const craters = [];
+  if(cratered) {
+    const n = CONFIG.craterCountMin + Math.floor(seededRand(seed*83)*(CONFIG.craterCountMax-CONFIG.craterCountMin+1));
+    for(let i=0;i<n;i++){
+      const dir = new THREE.Vector3(
+        seededRand(seed*61+i*3)-0.5,
+        seededRand(seed*67+i*5)-0.5,
+        seededRand(seed*71+i*7)-0.5
+      ).normalize();
+      const rad = CONFIG.craterRadMin + seededRand(seed*73+i)*(CONFIG.craterRadMax-CONFIG.craterRadMin);
+      const depth = (CONFIG.craterDepthMin + seededRand(seed*79+i)*(CONFIG.craterDepthMax-CONFIG.craterDepthMin))*roughness;
+      // cheap reject: cosine of the outermost rim angle, lets us skip the acos entirely
+      const cosCut = Math.cos(Math.min(Math.PI, rad*(1+CONFIG.craterRimWidth)));
+      craters.push({dir, rad, depth, cosCut});
+    }
+  }
+
+  return dir => {
+    let h = 1 + amps[0]*Math.sin(dir.dot(ks[0]))
+              + amps[1]*Math.sin(dir.dot(ks[1]))
+              + amps[2]*Math.sin(dir.dot(ks[2]))
+              + amps[3]*Math.sin(dir.dot(ks[3]))
+              + amps[4]*Math.sin(dir.dot(ks[4]));
+    for(let i=0;i<craters.length;i++){
+      const c = craters[i];
+      const cd = dir.dot(c.dir);
+      if(cd < c.cosCut) continue;
+      const t = Math.acos(Math.min(1, cd))/c.rad;
+      if(t < 1) {
+        const s = t*t*(3-2*t);              // smoothstep across the bowl
+        h -= c.depth*(1 - s);
+      }
+      const r = 1 - Math.abs(t - 1)/CONFIG.craterRimWidth;  // hump peaking on the rim line
+      if(r > 0) h += c.depth*CONFIG.craterRimHeight * r*r*(3-2*r);
+    }
+    return h;
+  };
 }
 
 const kmToUnits = km => km/6371*CONFIG.earthR;
@@ -296,21 +397,21 @@ const SPOTS = {
 
 const BODY_DEFS = [
   { name:'SUN', star:true, R:520, pos:new THREE.Vector3(0,0,0) },
-  { name:'MERCURY', type:'rocky', km:2440,  au:0.39, ang:140, y:  60, paint:'mercury' },
+  { name:'MERCURY', type:'rocky', km:2440,  au:0.39, ang:140, y:  60, paint:'mercury', craters:true },
   { name:'VENUS',   type:'rocky', km:6052,  au:0.72, ang:160, y: 120, paint:'venus',
-    atmo:{h:0.30, color:0xe8d9a0, glow:0.5, haze:0.14, drag:0.9, darken:0.3} },
+    atmo:{h:0.30, color:0xe8d9a0, glow:0.5, drag:0.9, darken:0.3} },
   { name:'EARTH',   type:'rocky', km:6371,  au:1.00, ang:180, y:   0, paint:'earth',
-    atmo:{h:0.16, color:0x6ab7ff, glow:0.38, haze:0.08, drag:0.6} },
+    atmo:{h:0.16, color:0x6ab7ff, glow:0.38, drag:0.6, sky:'#3d6fb4'} },
   { name:'MARS',    type:'rocky', km:3390,  au:1.52, ang:195, y:-200, paint:'mars',
-    atmo:{h:0.10, color:0xd9a066, glow:0.22, haze:0.05, drag:0.3} },
+    atmo:{h:0.10, color:0xd9a066, glow:0.22, drag:0.3, sky:'#b4713d'} },
   { name:'JUPITER', type:'gas',   km:69911, au:5.20, ang:205, y: 350, paint:'jupiter', bands:12 },
   { name:'SATURN',  type:'gas',   km:58232, au:9.50, ang:215, y:-450, paint:'saturn',  bands:9,
     rings:[[1.24,1.72],[1.78,2.1]], ringTilt:27 },
   { name:'URANUS',  type:'gas',   km:25362, au:19.2, ang:222, y: 600, paint:'uranus',  bands:5,
     rings:[[1.4,1.55]], ringTilt:98 },
   { name:'NEPTUNE', type:'gas',   km:24622, au:30.1, ang:228, y:-500, paint:'neptune', bands:7 },
-  { name:'PLUTO',   type:'rocky', km:1188,  au:39.5, ang:233, y: 300, paint:'pluto',
-    atmo:{h:0.08, color:0xb0c4de, glow:0.15, haze:0.04, drag:0.15} }
+  { name:'PLUTO',   type:'rocky', km:1188,  au:39.5, ang:233, y: 300, paint:'pluto', craters:true,
+    atmo:{h:0.08, color:0xb0c4de, glow:0.15, drag:0.15} }
 ];
 
 const bodies = [];
@@ -356,13 +457,17 @@ function gasBandColor(paint, dir, bands, seed) {
   const pal = GAS_PALETTES[paint];
   const lat = Math.asin(Math.max(-1,Math.min(1,dir.y)));
   const lon = Math.atan2(dir.z, dir.x);
-  const wobble = 0.3*Math.sin(lon*3 + lat*7 + seed) + 0.15*Math.sin(lon*7 - lat*11);
+  const t = CONFIG.gasTurb;
+  const wobble = 0.3*t*Math.sin(lon*3 + lat*7 + seed)
+               + 0.15*t*Math.sin(lon*7 - lat*11)
+               + CONFIG.gasWobble3*Math.sin(lon*17 + lat*23 + seed*1.7);
   const idx = Math.abs(Math.floor((lat/Math.PI + 0.5)*bands + wobble)) % pal.length;
   return new THREE.Color(pal[idx]);
 }
 
-function buildRockyMesh(R, shapeFn, paint) {
-  const detail = R > 120 ? 5 : (R > 40 ? 4 : 3);
+function buildRockyMesh(R, shapeFn, paint, minDetail) {
+  let detail = R > 120 ? 5 : (R > 40 ? 4 : 3);
+  if(minDetail) detail = Math.max(detail, minDetail); // cratered bodies need verts to show bowls
   const geo = new THREE.IcosahedronGeometry(R, detail);
   const posAttr = geo.getAttribute('position');
   const colors = new Float32Array(posAttr.count*3);
@@ -379,21 +484,60 @@ function buildRockyMesh(R, shapeFn, paint) {
   return new THREE.Mesh(geo, new THREE.MeshStandardMaterial({vertexColors:true, flatShading:true, roughness:0.95, metalness:0}));
 }
 
-function addAtmoShells(center, baseR, h, color, glowOp, hazeOp) {
-  const glow = new THREE.Mesh(
+// Fresnel atmosphere shell. BackSide + depthTest means only the far hemisphere survives,
+// so the glow reads as a halo hugging the limb. The logdepthbuf chunks are NOT optional:
+// the renderer runs a logarithmic depth buffer, and a custom shader that skips them writes
+// depth on a different curve to every other material in the scene (z-fighting at the limb).
+const ATMO_VERT = `
+#include <common>
+#include <logdepthbuf_pars_vertex>
+varying vec3 vNormalW;
+varying vec3 vViewDirW;
+void main() {
+  vec4 wp = modelMatrix * vec4(position, 1.0);
+  vNormalW = normalize(mat3(modelMatrix) * normal);
+  vViewDirW = cameraPosition - wp.xyz;
+  gl_Position = projectionMatrix * viewMatrix * wp;
+  #include <logdepthbuf_vertex>
+}`;
+
+const ATMO_FRAG = `
+#include <common>
+#include <logdepthbuf_pars_fragment>
+uniform vec3 uColor;
+uniform float uFalloff;
+uniform float uStrength;
+varying vec3 vNormalW;
+varying vec3 vViewDirW;
+void main() {
+  #include <logdepthbuf_fragment>
+  float rim = 1.0 - abs(dot(normalize(vViewDirW), normalize(vNormalW)));
+  float intensity = clamp(pow(rim, uFalloff) * uStrength, 0.0, 1.0);
+  gl_FragColor = vec4(uColor, intensity);
+  #include <tonemapping_fragment>
+  #include <colorspace_fragment>
+}`;
+
+function addAtmoShell(center, baseR, h, color, strength) {
+  const shell = new THREE.Mesh(
     new THREE.IcosahedronGeometry(baseR*(1+h), 4),
-    new THREE.MeshBasicMaterial({color, transparent:true, opacity:glowOp, side:THREE.BackSide, blending:THREE.AdditiveBlending, depthWrite:false})
+    new THREE.ShaderMaterial({
+      uniforms: {
+        uColor:    { value: new THREE.Color(color) },
+        uFalloff:  { value: CONFIG.atmoFalloff },
+        uStrength: { value: strength }
+      },
+      vertexShader: ATMO_VERT,
+      fragmentShader: ATMO_FRAG,
+      side: THREE.BackSide,
+      transparent: true,
+      depthWrite: false,
+      blending: THREE.AdditiveBlending
+    })
   );
-  glow.position.copy(center);
-  scene.add(glow);
-  if(hazeOp > 0) {
-    const haze = new THREE.Mesh(
-      new THREE.IcosahedronGeometry(baseR*(1+h*0.55), 4),
-      new THREE.MeshBasicMaterial({color, transparent:true, opacity:hazeOp, side:THREE.FrontSide, depthWrite:false})
-    );
-    haze.position.copy(center);
-    scene.add(haze);
-  }
+  shell.position.copy(center);
+  scene.add(shell);
+  return shell;
 }
 
 function addBody(def) {
@@ -413,12 +557,12 @@ function addBody(def) {
   }
   else if(def.type === 'rocky') {
     const R = kmToUnits(def.km);
-    const shapeFn = makeShapeFn(def.name.length*37+5, 1.0);
-    const mesh = buildRockyMesh(R, shapeFn, def.paint);
+    const shapeFn = makeShapeFn(def.name.length*37+5, 1.0, def.craters);
+    const mesh = buildRockyMesh(R, shapeFn, def.paint, def.craters ? CONFIG.craterDetail : 0);
     mesh.position.copy(center);
     scene.add(mesh);
     solidMeshes.push(mesh);
-    if(def.atmo) addAtmoShells(mesh.position, R, def.atmo.h, def.atmo.color, def.atmo.glow, def.atmo.haze);
+    if(def.atmo) addAtmoShell(mesh.position, R, def.atmo.h, def.atmo.color, def.atmo.glow*CONFIG.atmoStrengthMult);
     body = { name:def.name, center:mesh.position, R, shapeFn, cloudR:null,
              g:Math.min(CONFIG.gravityK*R, CONFIG.gravityMax), deadly:false, gas:false, atmo:def.atmo||null };
   }
@@ -439,7 +583,7 @@ function addBody(def) {
     const cloud = new THREE.Mesh(cloudGeo, new THREE.MeshStandardMaterial({vertexColors:true, roughness:1, metalness:0, transparent:true, opacity:0.96, depthWrite:true}));
     cloud.position.copy(center);
     scene.add(cloud);
-    addAtmoShells(cloud.position, cloudR, 0.06, new THREE.Color(GAS_PALETTES[def.paint][0]).getHex(), 0.3, 0.0);
+    addAtmoShell(cloud.position, cloudR, 0.06, new THREE.Color(GAS_PALETTES[def.paint][0]).getHex(), CONFIG.atmoGasStrength);
 
     const coreShape = makeShapeFn(def.name.length*53+11, 0.7);
     const core = buildRockyMesh(coreR, coreShape, 'core');
@@ -509,10 +653,18 @@ function nearestBody(p) {
 
 // Shared gravity field: used by the live sim AND the trajectory predictor.
 // Returns true if pos is inside a solid body (predictor uses this as impact).
+// It also fills gravInfo as a side-effect: the nearest body (by distance normalised to its
+// own reach) and the dominant body (largest gravity contribution here). The orbit aids read
+// those instead of re-walking the body list — the falloff maths stays defined exactly once.
+// gravInfo describes the LAST position passed in, so read it straight after the call.
 const _gd = new THREE.Vector3();
+const gravInfo = { nearestD: Infinity, nearestReach: 1, dominant: null, dominantG: 0 };
 function gravityAt(pos, out) {
   out.set(0,0,0);
   let inside = false;
+  let bestRatio = Infinity;
+  gravInfo.nearestD = Infinity; gravInfo.nearestReach = 1;
+  gravInfo.dominant = null; gravInfo.dominantG = 0;
   for(const b of bodies){
     _gd.copy(b.center).sub(pos);
     const d = _gd.length();
@@ -520,6 +672,11 @@ function gravityAt(pos, out) {
     let g = b.g * (reach / Math.max(d, reach))**2;
     if(b.gas && d < b.cloudR) g = b.g * (1 + (CONFIG.gasCoreGravityMult-1) * (1 - d/b.cloudR));
     if(d < b.R*0.99 || (b.deadly && d < b.R + 140)) inside = true;
+    const ratio = d/reach;   // "how many of its own radii away am I" — keeps a pebble from
+    if(ratio < bestRatio) {  // out-ranking a planet just by being physically closer
+      bestRatio = ratio; gravInfo.nearestD = d; gravInfo.nearestReach = reach;
+    }
+    if(g > gravInfo.dominantG) { gravInfo.dominantG = g; gravInfo.dominant = b; }
     if(g < 0.02) continue;
     out.addScaledVector(_gd.normalize(), g);
   }
@@ -546,21 +703,72 @@ const predLine = new THREE.Line(predGeo, new THREE.LineBasicMaterial({color:0x66
 predLine.frustumCulled = false;
 scene.add(predLine);
 const _pp = new THREE.Vector3(), _pv = new THREE.Vector3(), _pa = new THREE.Vector3();
+const _r0 = new THREE.Vector3(), _r1 = new THREE.Vector3();
+
+// Periapsis marker — the "burn here" Oberth signpost. Deliberately NOT in solidMeshes:
+// it must never be a build/aim raycast target.
+const periMarker = new THREE.Mesh(
+  new THREE.SphereGeometry(1, 10, 10),
+  new THREE.MeshBasicMaterial({color:0xffdd33})
+);
+periMarker.visible = false;
+periMarker.frustumCulled = false;
+scene.add(periMarker);
+const periPoint = new THREE.Vector3();
+let periValid = false;
+
+const PRED = { IMPACT:0, ORBIT:1, COAST:2 };
+let predOutcome = PRED.COAST;
 
 function updatePrediction() {
   _pp.copy(player.position);
   _pv.copy(vel);
   let stopped = false;
+  let dom = null, d0 = 0, swept = 0, peri = Infinity, backNearStart = false;
+  periValid = false;
+
   for(let i=0;i<CONFIG.predictSteps;i++){
     if(!stopped){
       const hit = gravityAt(_pp, _pa);
-      _pv.addScaledVector(_pa, CONFIG.predictDt);
-      _pp.addScaledVector(_pv, CONFIG.predictDt);
+      if(i === 0) {
+        // gravInfo is fresh for the player's own position on the first step
+        dom = gravInfo.dominant;
+        if(dom) { _r0.copy(_pp).sub(dom.center); d0 = _r0.length(); }
+      }
+      // Adaptive step: fine when close to a body, coarse out in the gaps. Same step count
+      // now buys minutes of lookahead in deep space without losing accuracy near planets.
+      const dtStep = Math.min(CONFIG.predictDtMax, Math.max(CONFIG.predictDtMin,
+        CONFIG.predictDtBase * (gravInfo.nearestD / gravInfo.nearestReach)));
+      _pv.addScaledVector(_pa, dtStep);
+      _pp.addScaledVector(_pv, dtStep);
       if(hit) stopped = true;
+
+      if(dom && !stopped){
+        _r1.copy(_pp).sub(dom.center);
+        const d = _r1.length();
+        if(d < peri) { peri = d; periPoint.copy(_pp); }
+        swept += _r0.angleTo(_r1);   // total angle walked around the dominant body
+        if(swept >= CONFIG.orbitSweptGate && Math.abs(d - d0) <= CONFIG.orbitRadTol*d0) backNearStart = true;
+        _r0.copy(_r1);
+      }
     }
     predPts[i].copy(_pp);
   }
   predGeo.setFromPoints(predPts);
+
+  // Outcome: it comes back around to where it started => closed orbit.
+  if(stopped) predOutcome = PRED.IMPACT;
+  else if(swept >= CONFIG.orbitAngle && backNearStart) predOutcome = PRED.ORBIT;
+  else predOutcome = PRED.COAST;
+
+  predLine.material.color.set(
+    predOutcome === PRED.IMPACT ? CONFIG.predColorImpact :
+    predOutcome === PRED.ORBIT  ? CONFIG.predColorOrbit  : CONFIG.predColorCoast
+  );
+
+  // Only meaningful on a path that doesn't end in the dirt, and only if the low point is
+  // meaningfully below where we already are.
+  periValid = !stopped && !!dom && peri < CONFIG.periShowFrac*d0;
 }
 
 // ============================================================
@@ -657,6 +865,7 @@ const dot = document.getElementById('dot');
 const heatfill = document.getElementById('heatfill');
 const heatBox = document.getElementById('heat');
 const darkEl = document.getElementById('dark');
+let lastTint = '#000000';   // avoids restyling the overlay every frame
 
 // Spawn on top of Earth
 const earth = bodies.find(b=>b.name==='EARTH');
@@ -876,25 +1085,31 @@ function animate(now) {
   }
   jumpQueued = false;
 
-  // --- atmospheric drag (aerobraking; gas interiors are soup) ---
+  // --- atmospheric drag (aerobraking; gas interiors are soup) + sky tint ---
   let darkness = 0;
+  let tint = '#000000';
   let noReturn = false;
   {
     const b = near.b;
     if(b.gas && near.dCenter < b.cloudR) {
       const depth = Math.min(1, Math.max(0, (b.cloudR - near.dCenter) / (b.cloudR - b.R*1.2)));
       if(!grounded) vel.multiplyScalar(Math.max(0, 1 - depth*CONFIG.gasInteriorDrag*dt));
-      darkness = Math.min(0.93, depth*0.98);
+      darkness = Math.min(0.93, depth*0.98);   // gas interior darkness: unchanged
       noReturn = gMag > CONFIG.jetThrust;
     } else if(b.atmo) {
       const atmoTop = near.surfR*(1 + b.atmo.h);
       if(near.dCenter < atmoTop) {
         const density = Math.min(1, Math.max(0, (atmoTop - near.dCenter)/(atmoTop - near.surfR)));
         if(!grounded) vel.multiplyScalar(Math.max(0, 1 - density*b.atmo.drag*dt));
-        if(b.atmo.darken) darkness = density*b.atmo.darken;
+        if(b.atmo.darken) darkness = density*b.atmo.darken;      // Venus keeps its darken
+        if(b.atmo.sky) {
+          tint = b.atmo.sky;
+          darkness = Math.max(darkness, density*CONFIG.skyTintMax);
+        }
       }
     }
   }
+  if(tint !== lastTint) { darkEl.style.background = tint; lastTint = tint; }
   darkEl.style.opacity = darkness.toFixed(2);
 
   if(CONFIG.drag !== 1) vel.multiplyScalar(Math.pow(CONFIG.drag, dt*60)); // frame-rate independent
@@ -973,6 +1188,15 @@ function animate(now) {
   camera.lookAt(player.position.clone().addScaledVector(look, 10));
   stars.position.copy(camera.position);
 
+  // --- periapsis marker (scaled by camera distance so it stays a readable dot) ---
+  if(periValid && !grounded && predLine.visible) {
+    periMarker.position.copy(periPoint);
+    periMarker.scale.setScalar(Math.max(camDist*0.15, camera.position.distanceTo(periPoint)*CONFIG.periScale));
+    periMarker.visible = true;
+  } else {
+    periMarker.visible = false;
+  }
+
   // --- HUD ---
   if(frameCount%6===0) {
     const speed = vel.length();
@@ -981,8 +1205,9 @@ function animate(now) {
     const gHere = near.b.g * (reach / Math.max(near.dCenter, reach))**2;
     const vOrb = Math.sqrt(Math.max(0, gHere * near.dCenter));
     const vEsc = vOrb * Math.SQRT2;
-    const mode = noReturn ? 'NO RETURN' : (grounded ? 'GROUNDED' : (thrusting ? 'BURNING' : 'COASTING'));
-    const modeColor = noReturn ? '#ff4433' : '#ffdd33';
+    const orbiting = predOutcome === PRED.ORBIT && predLine.visible;
+    const mode = noReturn ? 'NO RETURN' : (grounded ? 'GROUNDED' : (thrusting ? 'BURNING' : (orbiting ? 'ORBIT' : 'COASTING')));
+    const modeColor = noReturn ? '#ff4433' : (mode === 'ORBIT' ? CONFIG.predColorOrbit : '#ffdd33');
     const dShow = near.dSurf > 999 ? (near.dSurf/1000).toFixed(1)+'km' : Math.max(0,near.dSurf).toFixed(0)+'m';
     statsEl.innerHTML = `v: ${speed.toFixed(1)} m/s<br>`
       + `<span style="color:#8fa">${near.b.name} · ${dShow} · g ${gMag.toFixed(1)}</span><br>`
@@ -994,7 +1219,7 @@ function animate(now) {
     heatBox.firstChild.textContent = overheated ? 'OVERHEATED' : 'JETPACK';
   }
 
-  renderer.render(scene, camera);
+  if(composer) composer.render(); else renderer.render(scene, camera);
 }
 requestAnimationFrame(animate);
 
@@ -1002,6 +1227,7 @@ window.addEventListener('resize', ()=>{
   renderer.setSize(window.innerWidth, window.innerHeight);
   camera.aspect = window.innerWidth/window.innerHeight;
   camera.updateProjectionMatrix();
+  if(composer) composer.setSize(window.innerWidth, window.innerHeight);
 });
 
 function startGame() {
