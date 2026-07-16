@@ -44,3 +44,9 @@ written spec with acceptance criteria (docs/v05-spec.md is an example), another 
 it cold. Version history and process notes live in CHANGELOG.md and docs/devlog/.
 
 Three.js r164, ES modules, no other dependencies.
+
+## Copyright & usage
+
+(c) 2026 12code4. All rights reserved. You're welcome to play the game and read the
+source to learn from it. Reusing the code or assets in other projects requires
+permission — see [LICENSE](LICENSE). This is a portfolio piece, not a template.

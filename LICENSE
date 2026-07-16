@@ -1,0 +1,23 @@
+Copyright (c) 2026 12code4. All rights reserved.
+
+This repository is made publicly viewable for portfolio and educational purposes.
+
+Permission IS granted, free of charge, to:
+
+1. Play the game via this repository or its GitHub Pages deployment.
+2. Read the source code for personal learning.
+3. Fork the repository on GitHub solely to the extent permitted by the
+   GitHub Terms of Service.
+
+Permission is NOT granted to otherwise copy, modify, merge, publish, distribute,
+sublicense, sell, or reuse this software, its code, or its assets, in whole or in
+part, in any other project or product. Any such use requires prior written
+permission from the copyright holder (contact: GitHub @12code4).
+
+Third-party notice: this project loads three.js (MIT License, copyright three.js
+authors) from a CDN at runtime. three.js is separate software and is not covered
+by this notice.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED. IN NO EVENT SHALL THE COPYRIGHT HOLDER BE LIABLE FOR ANY CLAIM, DAMAGES
+OR OTHER LIABILITY ARISING FROM THE USE OF THE SOFTWARE.
