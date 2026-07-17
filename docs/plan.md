@@ -27,9 +27,18 @@ See docs/v05-spec.md (the work order). Summary:
 - [ ] bloomThreshold 0.82 is spec'd but atmosphere limbs peak ~0.30 linear — drop to ~0.5 if limbs should bloom
 
 ## Milestone 7: repo + ship
-- [ ] GitHub account + solar-swing repo (docs live there; Drive = playable-build shelf)
+- [x] GitHub account + solar-swing repo (docs live there; Drive = playable-build shelf)
+- [ ] Contribution rhythm: ~3 sessions/week, each ends in a commit
 - [ ] Convert to Vite + TypeScript, split modules
 - [ ] Title polish, minimal audio, itch.io page, blog write-up
+
+## Milestone 8: v0.6 "The System Moves" — SPEC'D (docs/v06-spec.md), awaiting Opus
+- [ ] Item 1: realistic-fast kinematic orbits, relative-velocity landing (rendezvous), time-aware gravityAt
+- [ ] Item 2: NASA textures x procedural vertex-color blend, graceful fallback
+- [ ] Item 3: belt to ~120 rocks (shared geometries, decor tier)
+- [ ] Item 4: log-radial minimap, corner + M/tap expand
+- [ ] Item 5: free look (ALT / EYE button), aim frozen
+- [ ] Item 6: atmo-peak shell fix, frame-rate-independent camera, full release ritual
 
 ## Backlog (ideas land here, not in the build)
 - Moons (Luna, Io/Europa, Titan); orbital motion of planets (true slingshots)
