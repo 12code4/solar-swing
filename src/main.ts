@@ -32,6 +32,7 @@ import { tryPointerLock } from './input/desktop';
 import './input/touch';
 import { btnJump, btnEye, btnReset } from './input/touch';
 import { mmWrap } from './ui/minimap';
+import { beginRun } from './rogue/ui';
 import { startLoop } from './loop';
 
 // Initial spawn on Earth + seed the trail so it doesn't streak from the origin.
@@ -43,6 +44,7 @@ const heatBox = document.getElementById('heat') as HTMLElement;
 function startGame(): void {
   (document.getElementById('start') as HTMLElement).style.display='none';
   app.playing = true;
+  beginRun();   // v0.8: the roguelite run starts with the game
   if(!isTouch) { canvas.style.cursor = 'none'; tryPointerLock(); }
   else {
     btnJump.style.display = 'flex';

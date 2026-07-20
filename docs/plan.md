@@ -51,6 +51,16 @@ See docs/v05-spec.md (the work order). Summary:
 - [x] Post-parity rider (separate commit): texture URLs 2k -> 8k (Uranus/Neptune stay 2k), anisotropy already maxed, fallback intact
 - [x] v0.6 tagged on main as the permanent parity reference
 
+## Milestone 10: v0.8 "Salvage Run" — BUILT on branch claude/roguelite-debug-menu-89966t (docs/v08-spec.md)
+- [x] Item 1: rogue state module — meta (localStorage) / run / cheats singletons, death hook, base-config tuning pipeline
+- [x] Item 2: deaths end the run — sun, crash landing (>30 m/s relative radial), void; gas-giant cores stay non-lethal
+- [x] Item 3: ~130 seeded salvage shards — rocky surface + orbit rings + gas-giant core shards + belt majors, parented to body groups
+- [x] Item 4: discovery bonuses + charted tally (n/10); Earth auto-discovered at first launch
+- [x] Item 5: run-end overlay + upgrade shop (thrusters capped below the 45 g ceiling), HOME BASE via U on Earth, toasts, HUD salvage line
+- [x] Item 6: debug menu (` / ~): live stats, time scale, every numeric CONFIG key editable live (startup-only keys flagged), teleport/god/inf-heat/salvage/end-run/wipe-meta
+- [x] Item 7: new CONFIG keys typed; Item 8: release ritual (version, plan, changelog, devlog)
+- [x] Verified headless: typecheck + build clean; Playwright runs — play/discover/toast, debug open + 92 tuning rows, live shardPickR edit, teleport, crash death -> shop buy -> meta persists across reload, god mode survives, Mars discovery, shard collection
+
 ## Backlog (ideas land here, not in the build)
 - Elegant CONTEXT-OBJECT state model: replace the grouped module-level singletons (chosen in v0.7 for parity-safety / minimal churn) with a threaded context. Protected by the v0.6 parity baseline; do it once there is coverage to catch a regression.
 - Texture sharpness REAL fix: procedural LOD detail crossfade up close. v0.7's rider only swapped 2k->8k URLs (anisotropy was already maxed); an 8k map still blurs when a body fills the screen. LOD detail is the actual answer (see also the distance-blended detail-texture backlog note below).
@@ -73,3 +83,4 @@ See docs/v05-spec.md (the work order). Summary:
 - 2026-07-16 · v0.5 BEAUTIFUL ORBITS: 5 terrain octaves + baked craters (Mercury/Pluto, detail 5), stormier gas bands, fresnel atmosphere shader + sky tint, desktop bloom composer (RenderPass/UnrealBloomPass/OutputPass), adaptive prediction dt with ORBIT/IMPACT/COAST colouring + periapsis marker
 - 2026-07-17 · v0.6 THE SYSTEM MOVES (Opus): kinematic orbits + relative-velocity rendezvous physics, time-aware gravityAt, NASA textures x procedural blend, 120-rock belt, log-radial minimap, ALT/EYE free look; executor fixed 2 real bugs (world-frame atmo drag, spec's double-counted orbital motion)
 - 2026-07-20 · v0.7 REFACTOR: single 1810-line HTML -> Vite + TypeScript, 18 ES modules split along the existing section banners. Zero behavior change (parity vs v0.6 tag). Grouped module-level singletons (not a context object); strict tsc passes after each extraction. npm build -> dist/ + Actions Pages deploy. Post-parity rider: texture URLs 2k -> 8k (ice giants stay 2k), anisotropy already maxed. Tagged v0.6 as the parity reference.
+- 2026-07-20 · v0.8 SALVAGE RUN (branch claude/roguelite-debug-menu-89966t): roguelite layer — deaths (sun/crash/void) end runs, ~130 seeded salvage shards + discovery bonuses, localStorage meta + between-run upgrade shop (thrust capped below 45 g by design), HOME BASE on Earth (U); debug menu (~) with live stats, time scale, every numeric CONFIG editable live, teleport/god cheats. Owner-sanctioned scope expansion, spec'd in docs/v08-spec.md; verified headless with Playwright.

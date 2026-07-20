@@ -185,6 +185,20 @@ export interface Config {
   minimapLogK: number;
   minimapArrowWorld: number;
   minimapArrowPx: number;
+  // roguelite (v0.8)
+  crashSpeed: number;
+  shardValue: number;
+  coreShardValue: number;
+  discoveryBonus: number;
+  shardPickR: number;
+  surfShardsRocky: number;
+  orbitShardsRocky: number;
+  orbitShardsGas: number;
+  beltShardsMajor: number;
+  upgThrustPct: number;
+  upgHeatsinkPct: number;
+  upgRadiatorPct: number;
+  upgAeroshellFlat: number;
   AU: number;
   earthR: number;
 }

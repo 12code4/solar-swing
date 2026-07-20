@@ -4,6 +4,8 @@ import { app, pstate, keys, view, freeLookOn } from '../player/state';
 import { placeBlock, removeBlock, setSelectedBlock } from '../build/building';
 import { respawn } from '../player/physics';
 import { setMinimap, mmExpanded } from '../ui/minimap';
+import { dbg, toggleDebug } from '../ui/debug';
+import { openHomeBase } from '../rogue/ui';
 
 // ============================================================
 // Input — desktop
@@ -16,7 +18,7 @@ export function tryPointerLock(): void {
 }
 
 canvas.addEventListener('mousedown', e => {
-  if(!app.playing || isTouch) return;
+  if(!app.playing || isTouch || dbg.open) return;   // debug menu owns the mouse while open
   if(!app.locked) tryPointerLock();
   if(e.button === 0) pstate.mouseBurn = true;
   if(e.button === 2) placeBlock();
@@ -31,7 +33,7 @@ document.addEventListener('pointerlockchange', () => {
 });
 
 document.addEventListener('mousemove', e => {
-  if(!app.playing || isTouch) return;
+  if(!app.playing || isTouch || dbg.open) return;
   const mx = e.movementX || 0, my = e.movementY || 0;
   // ALT held: the mouse orbits the CAMERA and the aim stays exactly where it was. Reading
   // e.altKey as well as the key map keeps us honest if a keyup got eaten by the OS.
@@ -58,6 +60,8 @@ document.addEventListener('keydown', e => {
   if(e.code==='KeyR') respawn();
   if(e.code==='KeyM' && !e.repeat) setMinimap(!mmExpanded);        // v0.6 item 4
   if(e.code==='Escape' && mmExpanded) setMinimap(false);
+  if(e.code==='Backquote' && !e.repeat) { e.preventDefault(); toggleDebug(); }   // v0.8 item 6
+  if(e.code==='KeyU' && !e.repeat && app.playing) openHomeBase();                // v0.8 item 5
 });
 document.addEventListener('keyup', e => { keys[e.code]=false; });
 window.addEventListener('blur', () => { for(const k in keys) keys[k]=false; pstate.mouseBurn=false; view.eyeHeld=false; });

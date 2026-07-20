@@ -2,6 +2,24 @@
 
 All notable changes to this project. Format loosely follows keepachangelog.com.
 
+## [0.8] - 2026-07-20 — SALVAGE RUN (executed from docs/v08-spec.md, branch claude/roguelite-debug-menu-89966t)
+### Added
+- Roguelite runs: the sun, hard crash landings (relative radial impact > 30 m/s, CONFIG.crashSpeed) and drifting past the world bounds now END THE RUN instead of silently respawning. Run summary shows cause, run time, salvage earned, discoveries.
+- Salvage shards (~130, seeded deterministic placement): surface shards on rocky planets and belt majors, orbital shard rings around every planet, and one high-value CORE shard on each gas giant core — the paid NO RETURN dive. Shards ride their body's group exactly like placed blocks; surface placement goes through shapeFn (invariant 1).
+- Discovery: first landing on each body pays a bonus (+40) and counts toward the charted tally (n/10, belt counts once). Earth is auto-discovered on the first launch.
+- Meta progression, persisted in localStorage (`solarSwingMeta.v1`): salvage banks on death; the between-run shop sells permanent upgrades — THRUSTERS +4%/lv max 4 (capped at 44.1, still below the 45 g ceiling so big planets stay unhoverable BY DESIGN), HEATSINK -8% heat/lv, RADIATOR +12% cooling/lv, AEROSHELL +6 m/s crash tolerance/lv.
+- HOME BASE: press U while grounded on Earth to open the shop without dying.
+- HUD: salvage + charted line; toast messages for pickups, discoveries and deaths.
+- Debug menu (` / ~, desktop): live stats (~5Hz), time scale x0/x0.25/x1/x4 (scales the whole frame dt, so physics/orbits/camera stay mutually consistent), auto-generated editable rows for every numeric CONFIG key (build-time-only keys flagged), teleport-to-body with velocity matched (rendezvous rules respected), refill heat, god mode, infinite heat, +100 salvage, end run, wipe meta.
+- Tuning pipeline: debug edits write a BASE config and upgrades recompute on top (applyTuning), so the two compose. Both the live sim and the predictor see every edit because they read the same CONFIG (invariants 2/3 untouched).
+### Changed
+- resolveSurface records the relative radial impact speed and routes deadly/crash outcomes through a death hook assigned by the run UI (physics stays UI-free); walking over terrain can never trigger a crash — only an airborne arrival can.
+- R respawn stays a free abort (needed to leave gas-giant cores after grabbing the core shard); RESET on touch unchanged.
+### Known issues
+- Debug menu has no touch trigger (game itself, deaths and the shop all work on touch).
+- Meta persistence is the one sanctioned localStorage exception; sandbox world save/load stays in the backlog.
+- A debug teleport arrives in free fall — brake or the crash rule applies (god mode exists for a reason).
+
 ## [0.7] - 2026-07-20 — REFACTOR (executed from docs/v07-spec.md)
 ### Changed
 - PURE REFACTOR, no behavior change. The single-file build became a Vite + TypeScript project with ES modules. Same physics, same feel, same visuals, same controls, same bugs (Jupiter imbalance included — that stays a backlog item). Verified against the v0.6 git tag: spawn-on-Earth starting state, gravity field, orbital/escape HUD, grounded relative-velocity settle, minimap/free-look/build toggles all match.

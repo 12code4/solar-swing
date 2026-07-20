@@ -1,5 +1,6 @@
 import { CONFIG } from '../config';
 import { pstate } from '../player/state';
+import { meta, DISCOVERABLE_COUNT } from '../rogue/state';
 import { predOutcome, predLine, PRED } from '../player/prediction';
 import type { NearestInfo } from '../types';
 
@@ -32,7 +33,9 @@ export function updateHud(near: NearestInfo, relSpeed: number, noReturn: boolean
   statsEl.innerHTML = `v: ${speed.toFixed(1)} m/s<br>`
     + `<span style="color:#8fa">${near.b.name} · ${dShow} · g ${pstate.gMag.toFixed(1)}</span><br>`
     + `<span style="color:#7fc7ff">orb ${vOrb.toFixed(0)} · esc ${vEsc.toFixed(0)}</span><br>`
-    + `<span style="color:${modeColor}">${mode}</span>`;
+    + `<span style="color:${modeColor}">${mode}</span><br>`
+    + `<span style="color:#ffdd33">salv ${meta.salvage}</span>`
+    + `<span style="color:#889"> · charted ${meta.discovered.length}/${DISCOVERABLE_COUNT}</span>`;
   heatfill.style.width = (pstate.heat*100).toFixed(0)+'%';
   heatfill.style.background = pstate.overheated ? '#ff4433' : '#ffdd33';
   heatBox.style.color = pstate.overheated ? '#ff4433' : '#889';

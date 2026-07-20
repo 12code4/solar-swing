@@ -8,7 +8,10 @@ import {
   player, vel, pstate, camUp, camRight, camForward, view, getLookDir, freeLookOn,
   trailPts, trailGeo,
 } from './player/state';
-import { applyJetpack, applyWalking, applyAtmosphere, resolveSurface, resolveBlocks, respawn } from './player/physics';
+import { applyJetpack, applyWalking, applyAtmosphere, resolveSurface, resolveBlocks } from './player/physics';
+import { cheats, hooks } from './rogue/state';
+import { updateRogue } from './rogue/ui';
+import { updateDebug } from './ui/debug';
 import { updatePrediction, predLine, periMarker, periPoint, periValid } from './player/prediction';
 import { aimHit, ghost, BLOCK_TYPES, selectedBlock, blocks } from './build/building';
 import { drawMinimap } from './ui/minimap';
@@ -29,9 +32,12 @@ const _vrel = new THREE.Vector3();
 
 function animate(now: number): void {
   requestAnimationFrame(animate);
-  const dt = Math.min((now-last)/1000, 0.05);
+  const rawDt = Math.min((now-last)/1000, 0.05);
   last = now;
   frameCount++;
+  // debug time scale (v0.8): scales the WHOLE frame step, so physics, orbits and camera
+  // smoothing stay mutually consistent at x0 / x0.25 / x4 exactly as they are at x1.
+  const dt = rawDt * cheats.timeScale;
 
   // --- the system moves (v0.6 item 1) ---
   // Analytic positions, so this is a write, not an integration: no drift, and the predictor
@@ -100,7 +106,10 @@ function animate(now: number): void {
   // --- block collision ---
   resolveBlocks(near, blocks);
 
-  if(player.position.length() > CONFIG.boundsDist) respawn();
+  if(player.position.length() > CONFIG.boundsDist) hooks.death('LOST IN THE VOID');
+
+  // --- roguelite: pickups + discovery (v0.8) ---
+  updateRogue();
 
   // --- trail ---
   trailPts.pop();
@@ -167,6 +176,9 @@ function animate(now: number): void {
 
   // --- HUD ---
   if(frameCount%6===0) updateHud(near, relSpeed, noReturn, thrusting);
+
+  // --- debug menu stats (fps tracks raw frame time, not the scaled step) ---
+  updateDebug(near, rawDt);
 
   if(composer) composer.render(); else renderer.render(scene, camera);
 }

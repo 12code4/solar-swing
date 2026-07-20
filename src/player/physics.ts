@@ -6,6 +6,7 @@ import { bodyPosAt, bodyVelAt } from '../bodies/orbits';
 import { bodies, nearestBody } from '../bodies/gravity';
 import '../bodies/build-bodies';   // side-effect import: guarantees bodies[] is populated before the earth lookup below
 import { player, vel, pstate, keys, camForward, camRight } from './state';
+import { cheats, hooks } from '../rogue/state';
 import type { NearestInfo, BlockInstance } from '../types';
 
 // A minimal read-only view of a virtual stick — physics only needs its axes. Passing this
@@ -67,7 +68,7 @@ export function applyJetpack(dt: number, look: THREE.Vector3, freeLook: boolean,
   const thrusting = throttle > 0 && !pstate.overheated;
   if(thrusting) {
     vel.addScaledVector(thrustDir, CONFIG.jetThrust*throttle*dt);
-    pstate.heat = Math.min(1, pstate.heat + CONFIG.heatRate*throttle*dt);
+    if(!cheats.infiniteHeat) pstate.heat = Math.min(1, pstate.heat + CONFIG.heatRate*throttle*dt);
     if(pstate.heat >= 1) pstate.overheated = true;
   } else {
     pstate.heat = Math.max(0, pstate.heat - CONFIG.coolRate*dt);
@@ -158,6 +159,7 @@ export function applyAtmosphere(dt: number, near: NearestInfo): AtmoResult {
 
 // --- surface collision (sun is deadly; gas giants land on the core) ---
 export function resolveSurface(): void {
+  const wasAirborne = !pstate.grounded;
   pstate.grounded = false;
   pstate.groundBody = null;
   {
@@ -165,7 +167,7 @@ export function resolveSurface(): void {
     const dir = player.position.clone().sub(n2.b.center).normalize();
     const surfR = n2.b.shapeFn ? n2.b.R * n2.b.shapeFn(dir) : n2.b.R;
     const dSurf = n2.dCenter - surfR - CONFIG.playerRadius;
-    if(n2.b.deadly && dSurf < 140) { respawn(); }
+    if(n2.b.deadly && dSurf < 140) { hooks.death('SOLAR INCINERATION'); }
     else if(dSurf <= 0.03) {
       player.position.copy(n2.b.center).addScaledVector(dir, surfR + CONFIG.playerRadius);
       // Cancel the radial component of RELATIVE velocity, not world velocity: arriving at a
@@ -175,6 +177,10 @@ export function resolveSurface(): void {
       if(radial < 0) vel.addScaledVector(dir, -radial);
       pstate.grounded = true;
       pstate.groundBody = n2.b;
+      // Roguelite crash rule (v0.8 spec item 2): the radial approach speed we just cancelled
+      // IS the impact speed, in the body's frame — same relative-velocity rule as everything
+      // else. Only an airborne arrival can crash; walking over terrain never triggers it.
+      if(wasAirborne && -radial > CONFIG.crashSpeed) hooks.death('CRASH LANDING');
     }
   }
 }

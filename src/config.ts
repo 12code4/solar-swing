@@ -107,6 +107,22 @@ export const CONFIG: Config = {
                             // that actually changes the mapping, so k lives here instead.
   minimapArrowWorld: 2500,  // world distance probed ahead of the player to aim the vel arrow
   minimapArrowPx:  11,
+  // roguelite (v0.8) — death rules, shard economy, upgrade effect sizes
+  crashSpeed: 30,           // relative radial impact speed that kills; aeroshell raises it.
+                            // A max jump-fall on Earth peaks ~15, so clean landings are safe.
+  shardValue: 5,
+  coreShardValue: 25,       // one per gas giant, sitting on the core: the paid NO RETURN dive
+  discoveryBonus: 40,
+  shardPickR: 4,            // pickup radius around a shard
+  surfShardsRocky: 6,
+  orbitShardsRocky: 6,
+  orbitShardsGas: 8,
+  beltShardsMajor: 3,
+  upgThrustPct: 0.04,       // per level, max 4 -> +16%: 38*1.16=44.1 stays BELOW the 45 g
+                            // ceiling, so sideways burns remain mandatory on big planets
+  upgHeatsinkPct: 0.08,     // heatRate reduction per level
+  upgRadiatorPct: 0.12,     // coolRate increase per level
+  upgAeroshellFlat: 6,      // crashSpeed m/s per level
   // scale rulers — radii keep real ratios, distances compressed
   AU: 3600,
   earthR: 160
