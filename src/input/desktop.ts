@@ -41,7 +41,8 @@ document.addEventListener('mousemove', e => {
     return;
   }
   view.yawDelta -= mx*CONFIG.freeLookSens;
-  view.pitch = Math.max(-1.25, Math.min(1.25, view.pitch - my*CONFIG.freeLookSens));
+  // v0.9 item 2: full-range aim — clamp sits just short of the poles
+  view.pitch = Math.max(-CONFIG.pitchMax, Math.min(CONFIG.pitchMax, view.pitch - my*CONFIG.freeLookSens));
 });
 
 document.addEventListener('wheel', e => {

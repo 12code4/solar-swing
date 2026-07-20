@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { CONFIG } from '../config';
 import { scene, makeGlowTexture } from '../scene';
 import { makeShapeFn, seededRand } from './shape';
+import { seedMix } from '../world/seed';
 import { orbitParams, bodyPosAt, deg, kmToUnits, orbiters } from './orbits';
 import { applyTexture, liftVertexColors, TEX_FILES } from './textures';
 import { bodies } from './gravity';
@@ -185,8 +186,11 @@ function addAtmoShell(parent: THREE.Object3D, baseR: number, h: number, color: T
 // Every body lives inside its own Group at the world origin of that body; all children sit
 // at LOCAL origin. body.center aliases group.position, so it stays the live world centre
 // exactly as it did in v0.5 when it aliased mesh.position.
-function addBody(def: BodyDef): Body {
-  const op = def.star ? orbitParams(0, 0, 0, SUN_R) : orbitParams(def.au!*CONFIG.AU, def.y!, def.ang!, SUN_R);
+function addBody(def: BodyDef, idx: number): Body {
+  // v0.9 item 1: the run seed replaces the table's fixed starting angle. def.ang is kept in
+  // BODY_DEFS as the historical reference layout but is no longer read.
+  const seededAng = seededRand(seedMix + idx*97)*360;
+  const op = def.star ? orbitParams(0, 0, 0, SUN_R) : orbitParams(def.au!*CONFIG.AU, def.y!, seededAng, SUN_R);
   const group = new THREE.Group();
   bodyPosAt(op, 0, group.position);
   group.userData.orbitNode = true;   // placeBlock walks up to find this
@@ -277,7 +281,7 @@ function addBody(def: BodyDef): Body {
   return body;
 }
 
-BODY_DEFS.forEach(addBody);
+BODY_DEFS.forEach((def, idx) => addBody(def, idx));
 
 // ============================================================
 // Asteroid belt (v0.6 item 3)
@@ -318,6 +322,10 @@ const BELT_CLUSTERS = [
 const _rockDir = new THREE.Vector3();   // scratch for the rotation-composed shapeFn
 let beltPhysical = 0, beltDecor = 0;
 
+// v0.9 item 1: the whole belt wedge rotates as one unit per seed. Internal layout (clusters,
+// scatter, sizes, shapes) stays seeded-fixed so the physical-rock budget is deterministic.
+const beltPhase = seededRand(seedMix*31 + 7)*360;
+
 for(let i=0;i<CONFIG.beltCount;i++){
   const s = i*53+9;
 
@@ -325,10 +333,10 @@ for(let i=0;i<CONFIG.beltCount;i++){
   let ang: number, au: number;
   if(seededRand(s*3) < CONFIG.beltClusterFrac){
     const c = BELT_CLUSTERS[Math.floor(seededRand(s*29)*BELT_CLUSTERS.length) % BELT_CLUSTERS.length];
-    ang = c.ang + (seededRand(s*31)-0.5)*6;
+    ang = c.ang + beltPhase + (seededRand(s*31)-0.5)*6;
     au  = c.au  + (seededRand(s*37)-0.5)*0.22;
   } else {
-    ang = 185 + seededRand(s)*35;
+    ang = 185 + beltPhase + seededRand(s)*35;
     au  = 2.2 + seededRand(s*3+1)*1.1;
   }
   const y = (seededRand(s*5)-0.5)*CONFIG.beltYSpread;

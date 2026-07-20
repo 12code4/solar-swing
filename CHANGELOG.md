@@ -2,6 +2,20 @@
 
 All notable changes to this project. Format loosely follows keepachangelog.com.
 
+## [0.9] - 2026-07-20 — SEEDED SKIES (executed from docs/v09-spec.md)
+### Added
+- Run seed system: every page load rolls a fresh system layout — each planet starts at a seeded random point in its orbit, and the asteroid belt wedge rotates as one unit. `?seed=N` pins a layout (shareable); the start screen shows the seed. Only ORBITAL PHASE is seeded: terrain, craters, rock shapes/sizes stay fixed so world identity and the physical-rock budget are stable.
+- Linear throttle slider (touch): right-edge vertical slider sets a PERSISTENT throttle 0-100% (snap-to-zero under 5%); thrust always fires along the camera aim, on the ground too (the JUMP-held-to-burn gate is gone; JUMP is a plain jump). Heat drain still scales with throttle; overheat still cuts the burn.
+- Full-range aim: pitch clamp widened from ±1.25 to ±CONFIG.pitchMax (1.55 rad, ~89°) on desktop mouse look and touch stick look — you can aim (and burn) almost straight up/down.
+### Changed
+- Touch control map: LEFT stick = look (this IS the burn direction now) · RIGHT stick = walk when grounded / free look while EYE held (its airborne burn role is gone) · SLIDER = throttle. JUMP/EYE buttons moved left of the slider rail.
+- camera.up hint for lookAt is now the exact perpendicular (right x view) instead of the smoothed camUp — at steep pitch the old hint made lookAt roll-flip at the poles. The smoothed camUp basis itself (up-blend, the fragile system) is untouched, as is free look.
+- BODY_DEFS keeps its `ang` column as the historical reference layout, but it is no longer read.
+### Known issues
+- Desktop keeps hold-to-burn at 100% (throttle slider is touch-only; owner paused the desktop-throttle question).
+- A "run" reshuffles on page load; re-seeding without a reload waits for the v0.8 roguelite merge (that branch is parked on claude/roguelite-debug-menu-89966t and needs rebasing onto this).
+- Earth remains vertically un-liftoffable at full throttle (thrust 38 < g 44.8) — that is the design, not a slider bug.
+
 ## [0.7] - 2026-07-20 — REFACTOR (executed from docs/v07-spec.md)
 ### Changed
 - PURE REFACTOR, no behavior change. The single-file build became a Vite + TypeScript project with ES modules. Same physics, same feel, same visuals, same controls, same bugs (Jupiter imbalance included — that stays a backlog item). Verified against the v0.6 git tag: spawn-on-Earth starting state, gravity field, orbital/escape HUD, grounded relative-velocity settle, minimap/free-look/build toggles all match.

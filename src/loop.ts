@@ -13,7 +13,7 @@ import { updatePrediction, predLine, periMarker, periPoint, periValid } from './
 import { aimHit, ghost, BLOCK_TYPES, selectedBlock, blocks } from './build/building';
 import { drawMinimap } from './ui/minimap';
 import { updateHud, applySky, dot } from './ui/hud';
-import { stickL, stickR, jumpHeld } from './input/touch';
+import { stickL, stickR, throttle } from './input/touch';
 
 // ============================================================
 // Main loop — the per-frame orchestration. It owns the frame order and the fragile camera
@@ -26,6 +26,7 @@ const scratch2 = new THREE.Vector3();
 const gAccum = new THREE.Vector3();
 const _bv2 = new THREE.Vector3();
 const _vrel = new THREE.Vector3();
+const _upHint = new THREE.Vector3();
 
 function animate(now: number): void {
   requestAnimationFrame(animate);
@@ -56,7 +57,7 @@ function animate(now: number): void {
   // touch look: left stick drives yaw/pitch rates
   if(isTouch && (Math.abs(stickL.x) > CONFIG.stickDead || Math.abs(stickL.y) > CONFIG.stickDead)) {
     view.yawDelta -= stickL.x * CONFIG.lookRate * dt;
-    view.pitch = Math.max(-1.25, Math.min(1.25, view.pitch - stickL.y * CONFIG.lookRate * dt));
+    view.pitch = Math.max(-CONFIG.pitchMax, Math.min(CONFIG.pitchMax, view.pitch - stickL.y * CONFIG.lookRate * dt));
   }
 
   // --- free look offsets (v0.6 item 5) ---
@@ -83,11 +84,11 @@ function animate(now: number): void {
   pstate.gMag = gAccum.length();
   vel.addScaledVector(gAccum, dt);
 
-  // --- jetpack: desktop = aim+hold, touch = right stick vector with throttle ---
-  const thrusting = applyJetpack(dt, look, freeLook, stickR, jumpHeld);
+  // --- jetpack: desktop = aim+hold, touch = linear throttle along the aim (v0.9) ---
+  const thrusting = applyJetpack(dt, look, isTouch ? throttle.value : 0);
 
   // --- grounded walking (resets jumpQueued at its end) ---
-  applyWalking(dt, near, localUp, thrusting, freeLook, stickR, jumpHeld);
+  applyWalking(dt, near, localUp, thrusting, freeLook, stickR);
 
   // --- atmospheric drag (aerobraking) + global drag + integration ---
   const atmo = applyAtmosphere(dt, near);
@@ -137,11 +138,13 @@ function animate(now: number): void {
   // place the offset is consumed — thrust, prediction, HUD and getLookDir() all still run on
   // the untouched `look`, which is exactly why aim stays frozen while the camera orbits.
   let camView = look;
+  let hintRight = camRight;   // the right axis that is perpendicular to camView
   if(view.flYaw !== 0 || view.flPitch !== 0) {
     const qy = new THREE.Quaternion().setFromAxisAngle(camUp, view.flYaw);
     const axis = camRight.clone().applyQuaternion(qy);
     camView = look.clone().applyQuaternion(qy).applyQuaternion(
       new THREE.Quaternion().setFromAxisAngle(axis, view.flPitch));
+    hintRight = axis;
   }
   const idealCamPos = player.position.clone()
     .addScaledVector(camView, -view.camDist)
@@ -149,7 +152,13 @@ function animate(now: number): void {
   // v0.6 item 6: a fixed lerp factor makes the camera stiffer the faster you render, so at
   // 160Hz the old lerp(0.12) chased ~2.7x harder than at 60. This form is dt-correct.
   camera.position.lerp(idealCamPos, 1 - Math.exp(-CONFIG.camSmooth*dt));
-  camera.up.copy(camUp);
+  // v0.9 item 2: full-range aim means the view can run nearly parallel to camUp, where the
+  // old up-hint makes lookAt degenerate (roll flips at the poles). right x view is exactly
+  // perpendicular to the view at ANY pitch and equals camUp at pitch 0, so it is the same
+  // camera at shallow angles and a stable one at steep angles.
+  _upHint.crossVectors(hintRight, camView);
+  if(_upHint.lengthSq() < 1e-8) _upHint.copy(camUp);   // view ∥ right can only happen in free look extremes
+  camera.up.copy(_upHint.normalize());
   camera.lookAt(player.position.clone().addScaledVector(camView, 10));
   stars.position.copy(camera.position);
 

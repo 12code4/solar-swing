@@ -5,10 +5,13 @@ import { respawn } from '../player/physics';
 import { setMinimap, mmExpanded, mmWrap, mmBack } from '../ui/minimap';
 
 // ============================================================
-// Input — touch (twin virtual sticks)
-// left stick: camera look · right stick: walk (grounded) / burn (airborne or JUMP held)
-// stickL/stickR/jumpHeld are exported so the loop (and, via the loop, physics) can read the
-// live axis values without an input<->physics module cycle.
+// Input — touch (v0.9 control rework)
+// left stick: camera look (full-range aim) · right stick: walk when grounded, free look
+// while EYE is held · right-edge LINEAR SLIDER: jetpack throttle 0..1 (persistent), thrust
+// always fires along the camera aim. The old radial burn-stick and the JUMP-held-to-burn
+// gate are gone (v0.9 item 3).
+// stickL/stickR/throttle are exported so the loop (and, via the loop, physics) can read the
+// live values without an input<->physics module cycle.
 // ============================================================
 interface Stick { el: HTMLElement; knob: HTMLElement; id: number | null; ox: number; oy: number; x: number; y: number; }
 
@@ -17,7 +20,25 @@ export const stickR: Stick = { el:document.getElementById('stickR') as HTMLEleme
 export const btnJump = document.getElementById('btnJump') as HTMLElement;
 export const btnEye  = document.getElementById('btnEye') as HTMLElement;
 export const btnReset = document.getElementById('btnReset') as HTMLElement;
-export let jumpHeld = false;
+
+// ----- linear throttle slider (v0.9 item 3) -----
+export const throttle = { value: 0 };
+export const thrEl = document.getElementById('throttle') as HTMLElement;
+const thrTrack = document.getElementById('thrTrack') as HTMLElement;
+const thrFill  = document.getElementById('thrFill') as HTMLElement;
+const thrLabel = document.getElementById('thrLabel') as HTMLElement;
+
+function setThrottle(v: number): void {
+  throttle.value = v < CONFIG.thrSnap ? 0 : Math.min(1, v);
+  thrFill.style.height = (throttle.value*100).toFixed(0)+'%';
+  thrLabel.textContent = (throttle.value*100).toFixed(0)+'%';
+  thrLabel.style.color = throttle.value > 0 ? '#ffdd33' : '#ccc';
+}
+
+function throttleFromTouch(t: Touch): void {
+  const r = thrTrack.getBoundingClientRect();
+  setThrottle(1 - (t.clientY - r.top)/r.height);
+}
 
 function stickStart(s: Stick, t: Touch): void {
   s.id = t.identifier;
@@ -67,9 +88,19 @@ if(isTouch) {
   canvas.addEventListener('touchend', endHandler);
   canvas.addEventListener('touchcancel', endHandler);
 
-  btnJump.addEventListener('touchstart', e => { e.preventDefault(); jumpHeld = true; pstate.jumpQueued = true; btnJump.classList.add('on'); }, {passive:false});
-  btnJump.addEventListener('touchend',   e => { e.preventDefault(); jumpHeld = false; btnJump.classList.remove('on'); }, {passive:false});
-  btnReset.addEventListener('touchstart', e => { e.preventDefault(); respawn(); }, {passive:false});
+  // Throttle: touch events keep firing on the element where the touch STARTED, so a drag
+  // that drifts off the track keeps working. stopPropagation keeps it off the canvas sticks.
+  const thrHandler = (e: TouchEvent): void => {
+    e.preventDefault(); e.stopPropagation();
+    throttleFromTouch(e.changedTouches[0]);
+  };
+  thrTrack.addEventListener('touchstart', thrHandler, {passive:false});
+  thrTrack.addEventListener('touchmove', thrHandler, {passive:false});
+
+  // JUMP is now a plain jump (v0.9: burning no longer needs it held)
+  btnJump.addEventListener('touchstart', e => { e.preventDefault(); pstate.jumpQueued = true; btnJump.classList.add('on'); }, {passive:false});
+  btnJump.addEventListener('touchend',   e => { e.preventDefault(); btnJump.classList.remove('on'); }, {passive:false});
+  btnReset.addEventListener('touchstart', e => { e.preventDefault(); setThrottle(0); respawn(); }, {passive:false});
   // v0.6 item 5: hold EYE and the right stick orbits the camera; release eases back to aim.
   btnEye.addEventListener('touchstart', e => { e.preventDefault(); view.eyeHeld = true;  btnEye.classList.add('on'); }, {passive:false});
   btnEye.addEventListener('touchend',   e => { e.preventDefault(); view.eyeHeld = false; btnEye.classList.remove('on'); }, {passive:false});

@@ -45,18 +45,18 @@ function brakeRelative(b: NearestInfo['b'], factor: number): void {
   vel.copy(_vrel).add(_bv2);
 }
 
-// --- jetpack: desktop = aim+hold, touch = right stick vector with throttle ---
+// --- jetpack: desktop = aim+hold, touch = linear throttle slider along the aim (v0.9) ---
+// Direction is ALWAYS the camera aim on both platforms now; touch magnitude comes from the
+// persistent slider (grounded burns allowed: aim up + throttle = liftoff). During free look
+// the aim is frozen, so the burn continues along the frozen aim — same rule as desktop.
 // Returns whether we are actively thrusting (walking + HUD both need it).
-export function applyJetpack(dt: number, look: THREE.Vector3, freeLook: boolean, stickR: StickAxes, jumpHeld: boolean): boolean {
+export function applyJetpack(dt: number, look: THREE.Vector3, touchThrottle: number): boolean {
   let throttle = 0;
   thrustDir.set(0,0,0);
   if(isTouch) {
-    // free look owns the right stick while EYE is held, so no burn from it
-    const mag = freeLook ? 0 : Math.hypot(stickR.x, stickR.y);
-    const wantBurn = mag > CONFIG.stickDead && (!pstate.grounded || jumpHeld);
-    if(wantBurn) {
-      throttle = Math.min(1, mag);
-      thrustDir.copy(look).multiplyScalar(-stickR.y).addScaledVector(camRight, stickR.x).normalize();
+    if(touchThrottle > 0) {
+      throttle = Math.min(1, touchThrottle);
+      thrustDir.copy(look);
     }
   } else {
     if((keys['ShiftLeft']||keys['ShiftRight']||pstate.mouseBurn)) {
@@ -80,7 +80,7 @@ export function applyJetpack(dt: number, look: THREE.Vector3, freeLook: boolean,
 // RELATIVE-VELOCITY PHYSICS (v0.6 item 1): the planet under you is doing ~50 m/s. Every
 // walk/friction/jump rule runs on velocity in THAT body's frame, then we add the frame
 // back on. Without this, walking east on Earth means walking at 59 m/s and west means 41.
-export function applyWalking(dt: number, near: NearestInfo, localUp: THREE.Vector3, thrusting: boolean, freeLook: boolean, stickR: StickAxes, jumpHeld: boolean): void {
+export function applyWalking(dt: number, near: NearestInfo, localUp: THREE.Vector3, thrusting: boolean, freeLook: boolean, stickR: StickAxes): void {
   if(pstate.grounded && !thrusting) {
     const gb = pstate.groundBody || near.b;
     bodyVelAt(gb, sim.time, _bv);
@@ -94,7 +94,8 @@ export function applyWalking(dt: number, near: NearestInfo, localUp: THREE.Vecto
     if(keys['KeyS']) input.sub(fT);
     if(keys['KeyD']) input.add(rT);
     if(keys['KeyA']) input.sub(rT);
-    if(isTouch && !jumpHeld && !freeLook) {   // free look suspends walking (item 5)
+    if(isTouch && !freeLook) {   // free look suspends walking (v0.6 item 5); the right stick
+                                 // walks whenever grounded now — JUMP no longer claims it (v0.9)
       input.addScaledVector(fT, -stickR.y).addScaledVector(rT, stickR.x);
     }
     if(input.lengthSq() > CONFIG.stickDead*CONFIG.stickDead) {

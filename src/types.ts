@@ -144,6 +144,8 @@ export interface Config {
   lookRate: number;
   stickDead: number;
   stickRadius: number;
+  pitchMax: number;
+  thrSnap: number;
   terrainAmps: number[];
   terrainHiFreqMult: number;
   craterCountMin: number;

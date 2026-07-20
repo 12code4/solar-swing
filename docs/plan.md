@@ -51,6 +51,13 @@ See docs/v05-spec.md (the work order). Summary:
 - [x] Post-parity rider (separate commit): texture URLs 2k -> 8k (Uranus/Neptune stay 2k), anisotropy already maxed, fallback intact
 - [x] v0.6 tagged on main as the permanent parity reference
 
+## Milestone 10: v0.9 "Seeded Skies" — DONE on main (docs/v09-spec.md)
+- [x] Item 1: run seed — seeded planet phases + belt wedge rotation, ?seed=N pins a layout, seed shown on start screen
+- [x] Item 2: full-range aim — pitch clamp ±1.25 -> ±1.55 (both platforms); pole-safe lookAt up-hint (right x view); up-blend basis untouched
+- [x] Item 3: linear throttle slider (touch) — persistent 0-100%, thrust along camera aim, grounded burns allowed, JUMP demoted to plain jump, right stick = walk/free-look only
+- [x] Verified headless: same-seed minimap overlap 0.93 vs diff-seed 0.11; airborne slider burn 44.5 m/s BURNING with heat drain; stick walking ~walk speed; no errors
+- NOTE: v0.8 "Salvage Run" (shards/roguelite/debug menu) is PARKED on claude/roguelite-debug-menu-89966t, unmerged by owner decision; rebase it onto v0.9 before reviving
+
 ## Backlog (ideas land here, not in the build)
 - Elegant CONTEXT-OBJECT state model: replace the grouped module-level singletons (chosen in v0.7 for parity-safety / minimal churn) with a threaded context. Protected by the v0.6 parity baseline; do it once there is coverage to catch a regression.
 - Texture sharpness REAL fix: procedural LOD detail crossfade up close. v0.7's rider only swapped 2k->8k URLs (anisotropy was already maxed); an 8k map still blurs when a body fills the screen. LOD detail is the actual answer (see also the distance-blended detail-texture backlog note below).
@@ -73,3 +80,5 @@ See docs/v05-spec.md (the work order). Summary:
 - 2026-07-16 · v0.5 BEAUTIFUL ORBITS: 5 terrain octaves + baked craters (Mercury/Pluto, detail 5), stormier gas bands, fresnel atmosphere shader + sky tint, desktop bloom composer (RenderPass/UnrealBloomPass/OutputPass), adaptive prediction dt with ORBIT/IMPACT/COAST colouring + periapsis marker
 - 2026-07-17 · v0.6 THE SYSTEM MOVES (Opus): kinematic orbits + relative-velocity rendezvous physics, time-aware gravityAt, NASA textures x procedural blend, 120-rock belt, log-radial minimap, ALT/EYE free look; executor fixed 2 real bugs (world-frame atmo drag, spec's double-counted orbital motion)
 - 2026-07-20 · v0.7 REFACTOR: single 1810-line HTML -> Vite + TypeScript, 18 ES modules split along the existing section banners. Zero behavior change (parity vs v0.6 tag). Grouped module-level singletons (not a context object); strict tsc passes after each extraction. npm build -> dist/ + Actions Pages deploy. Post-parity rider: texture URLs 2k -> 8k (ice giants stay 2k), anisotropy already maxed. Tagged v0.6 as the parity reference.
+- 2026-07-20 · v0.8 SALVAGE RUN built then PARKED on claude/roguelite-debug-menu-89966t (owner call): roguelite deaths/shards/shop + debug menu; unmerged, rebase before reviving
+- 2026-07-20 · v0.9 SEEDED SKIES (main): run-seed system scrambles planet phases + belt wedge per load (?seed=N pins), touch jetpack reworked to a linear right-edge throttle slider with thrust along camera aim, full-range pitch (±89°) with a pole-safe lookAt up-hint. Headless-verified (seed determinism, burn, walk).

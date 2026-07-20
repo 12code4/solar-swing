@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
-<title>SOLAR SWING — v0.7</title>
+<title>SOLAR SWING — v0.9</title>
 <style>
   * { margin:0; padding:0; box-sizing:border-box; }
   body { background:#04040c; overflow:hidden; font-family:'Courier New',monospace; touch-action:none; -webkit-user-select:none; user-select:none; }
@@ -94,8 +94,28 @@
     color:#ccc; font-family:'Courier New',monospace; font-size:10px; letter-spacing:1px;
     display:none; align-items:center; justify-content:center; z-index:6; }
   .tbtn.on { border-color:#ffdd33; color:#ffdd33; }
-  #btnJump { right:24px; bottom:200px; }
-  #btnEye  { right:24px; bottom:276px; }   /* v0.6 item 5: near JUMP, same thumb rail */
+  /* v0.9: buttons sit LEFT of the throttle slider rail */
+  #btnJump { right:88px; bottom:24px; }
+  #btnEye  { right:88px; bottom:100px; }   /* v0.6 item 5: near JUMP, same thumb rail */
+
+  /* linear throttle slider (v0.9 item 3) — right edge, persistent value */
+  #throttle {
+    position:fixed; right:12px; bottom:20px;
+    display:none; flex-direction:column; align-items:center; gap:6px;
+    z-index:6;
+  }
+  #thrLabel { color:#ccc; font-family:'Courier New',monospace; font-size:10px; letter-spacing:1px; }
+  #thrTrack {
+    width:44px; height:34vh; position:relative; overflow:hidden;
+    background:rgba(0,0,0,0.45);
+    border:1.5px solid rgba(255,255,255,0.3); border-radius:22px;
+    touch-action:none;
+  }
+  #thrFill {
+    position:absolute; left:0; right:0; bottom:0; height:0%;
+    background:rgba(255,221,51,0.35);
+    border-top:2px solid #ffdd33;
+  }
   #btnReset { right:24px; top:70px; width:52px; height:52px; }
 
   /* minimap (v0.6 item 4) */
@@ -131,12 +151,14 @@
 
 <div id="start">
   <h1>SOLAR SWING</h1>
-  <p>v0.7 &middot; the system moves &middot; mercury to pluto</p>
+  <p>v0.9 &middot; seeded skies &middot; mercury to pluto</p>
   <p id="startHelp" style="color:#666;font-size:11px;">
     HOLD CLICK or SHIFT to burn &middot; aim with mouse &middot; heat is your fuel<br>
     you cannot out-thrust a big planet &mdash; burn sideways, skim, and let the world curve away<br>
+    every load shuffles the planets &mdash; share a layout with its seed<br>
     WASD walk &middot; SPACE jump &middot; RIGHT-CLICK build &middot; 1/2/3 type &middot; X remove &middot; R respawn
   </p>
+  <p id="seedline" style="color:#8fa;font-size:11px;letter-spacing:1px;"></p>
   <button id="playbtn">CLICK TO PLAY</button>
 </div>
 
@@ -175,6 +197,7 @@
 <div class="stick" id="stickR"><div class="knob" id="knobR"></div></div>
 <div class="tbtn" id="btnJump">JUMP</div>
 <div class="tbtn" id="btnEye">EYE</div>
+<div id="throttle"><div id="thrLabel">0%</div><div id="thrTrack"><div id="thrFill"></div></div></div>
 <div class="tbtn" id="btnReset">RESET</div>
 
 <script type="module" src="/src/main.ts"></script>

@@ -50,6 +50,10 @@ export const CONFIG: Config = {
   lookRate: 2.6,         // rad/s at full stick
   stickDead: 0.12,
   stickRadius: 55,
+  // full-range aim + linear throttle (v0.9)
+  pitchMax: 1.55,        // aim pitch clamp, ~89 deg — just short of the pole so the cos/sin
+                         // look form never flips; the lookAt up-hint is pole-safe regardless
+  thrSnap: 0.05,         // throttle slider snaps to 0 below this fraction
   // terrain detail (v0.5 item 1)
   terrainAmps: [0.10, 0.06, 0.035, 0.018, 0.009], // octave amplitudes (fraction of R)
   terrainHiFreqMult: 2.6,   // frequency multiplier for the two new fine octaves
