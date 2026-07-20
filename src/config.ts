@@ -54,6 +54,13 @@ export const CONFIG: Config = {
   pitchMax: 1.55,        // aim pitch clamp, ~89 deg — just short of the pole so the cos/sin
                          // look form never flips; the lookAt up-hint is pole-safe regardless
   thrSnap: 0.05,         // throttle slider snaps to 0 below this fraction
+  // universal brake (v0.10) — auto retro-burn vs the nearest body's frame; same engine
+  brakeMult: 1.0,        // brake thrust as a multiple of jetThrust
+  // visual-only planet dressing (v0.10)
+  gasSpin: 0.012,        // base gas-giant cloud spin, rad/s (per-planet fixed variation on top)
+  earthCloudSpin: 0.0045,
+  earthCloudOpacity: 0.55,
+  earthCloudLift: 1.02,  // cloud shell radius as a multiple of Earth's R
   // terrain detail (v0.5 item 1)
   terrainAmps: [0.10, 0.06, 0.035, 0.018, 0.009], // octave amplitudes (fraction of R)
   terrainHiFreqMult: 2.6,   // frequency multiplier for the two new fine octaves

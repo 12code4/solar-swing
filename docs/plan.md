@@ -58,7 +58,16 @@ See docs/v05-spec.md (the work order). Summary:
 - [x] Verified headless: same-seed minimap overlap 0.93 vs diff-seed 0.11; airborne slider burn 44.5 m/s BURNING with heat drain; stick walking ~walk speed; no errors
 - NOTE: v0.8 "Salvage Run" (shards/roguelite/debug menu) is PARKED on claude/roguelite-debug-menu-89966t, unmerged by owner decision; rebase it onto v0.9 before reviving
 
+## Milestone 11: v0.10 "Full Circle" — DONE on main (docs/v10-spec.md)
+- [x] BUGFIX: high-speed camera lag — offset-space smoothing in the player's frame (steady-state lag was v/camSmooth)
+- [x] Belt: full sparse ring around the sun, seeded cluster knots + full-circle scatter (wedge retired)
+- [x] Looks: Earth rotating cloud deck (texture-gated, fallback-safe), gas giant cloud spin (visual-only)
+- [x] Universal brake: hold B / BRAKE button, retro-burn vs nearest body's frame, same engine + heat, exact null on final step, BRAKING HUD mode
+- [x] Verified headless: burn -> brake 8.6 -> 0.0 m/s; airborne touch-brake shows BRAKING; at-speed framing sane; no errors
+- NOTE for later: rocky planet spin/tilt backlogged — needs shapeFn rotation composition AND rotational ground-carry
+
 ## Backlog (ideas land here, not in the build)
+- Rocky planet spin + axial tilt: compose the (time-dependent) rotation into shapeFn (belt-rock trick) so mesh and collision stay locked, AND extend the grounded frame-carry to angular velocity or the surface skids under the player's feet (v0.10 decision)
 - Elegant CONTEXT-OBJECT state model: replace the grouped module-level singletons (chosen in v0.7 for parity-safety / minimal churn) with a threaded context. Protected by the v0.6 parity baseline; do it once there is coverage to catch a regression.
 - Texture sharpness REAL fix: procedural LOD detail crossfade up close. v0.7's rider only swapped 2k->8k URLs (anisotropy was already maxed); an 8k map still blurs when a body fills the screen. LOD detail is the actual answer (see also the distance-blended detail-texture backlog note below).
 - JUPITER GRAVITY REBALANCE (priority): GM = 45*1756^2 ≈ 1.39e8, ~15x the sun's — it out-dominates the outer system and cloud-top escape is 398 m/s vs player 20-80; any pass under ~12,000u is a capture. Fix direction: per-body gravity override targeting cloud-top escape ≈ 3-4x cruise speed; exact number from playtest.
@@ -82,3 +91,4 @@ See docs/v05-spec.md (the work order). Summary:
 - 2026-07-20 · v0.7 REFACTOR: single 1810-line HTML -> Vite + TypeScript, 18 ES modules split along the existing section banners. Zero behavior change (parity vs v0.6 tag). Grouped module-level singletons (not a context object); strict tsc passes after each extraction. npm build -> dist/ + Actions Pages deploy. Post-parity rider: texture URLs 2k -> 8k (ice giants stay 2k), anisotropy already maxed. Tagged v0.6 as the parity reference.
 - 2026-07-20 · v0.8 SALVAGE RUN built then PARKED on claude/roguelite-debug-menu-89966t (owner call): roguelite deaths/shards/shop + debug menu; unmerged, rebase before reviving
 - 2026-07-20 · v0.9 SEEDED SKIES (main): run-seed system scrambles planet phases + belt wedge per load (?seed=N pins), touch jetpack reworked to a linear right-edge throttle slider with thrust along camera aim, full-range pitch (±89°) with a pole-safe lookAt up-hint. Headless-verified (seed determinism, burn, walk).
+- 2026-07-20 · v0.10 FULL CIRCLE (main): high-speed camera lag fixed (offset-space smoothing), belt = full sparse seeded ring, Earth rotating cloud deck + gas cloud spin (visual-only), universal brake (B / BRAKE, retro-burn vs nearest body, same engine+heat). Headless-verified.

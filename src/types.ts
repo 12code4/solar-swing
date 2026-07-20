@@ -146,6 +146,11 @@ export interface Config {
   stickRadius: number;
   pitchMax: number;
   thrSnap: number;
+  brakeMult: number;
+  gasSpin: number;
+  earthCloudSpin: number;
+  earthCloudOpacity: number;
+  earthCloudLift: number;
   terrainAmps: number[];
   terrainHiFreqMult: number;
   craterCountMin: number;

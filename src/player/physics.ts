@@ -49,11 +49,25 @@ function brakeRelative(b: NearestInfo['b'], factor: number): void {
 // Direction is ALWAYS the camera aim on both platforms now; touch magnitude comes from the
 // persistent slider (grounded burns allowed: aim up + throttle = liftoff). During free look
 // the aim is frozen, so the burn continues along the frozen aim — same rule as desktop.
+// v0.10 item 4: brakeHeld overrides both — an auto-aimed retro-burn against velocity
+// RELATIVE TO THE NEAREST BODY (the same rendezvous frame the HUD v shows). Same engine,
+// same heat; the throttle self-scales on the final step so it nulls the relative velocity
+// exactly instead of jittering around zero. It can only remove energy in that frame.
 // Returns whether we are actively thrusting (walking + HUD both need it).
-export function applyJetpack(dt: number, look: THREE.Vector3, touchThrottle: number): boolean {
+export function applyJetpack(dt: number, look: THREE.Vector3, touchThrottle: number, brakeHeld: boolean, near: NearestInfo): boolean {
   let throttle = 0;
+  let power = CONFIG.jetThrust;
   thrustDir.set(0,0,0);
-  if(isTouch) {
+  if(brakeHeld) {
+    bodyVelAt(near.b, sim.time, _bv2);
+    _vrel.copy(vel).sub(_bv2);
+    const m = _vrel.length();
+    power = CONFIG.jetThrust*CONFIG.brakeMult;
+    if(m > 1e-4 && power*dt > 0) {
+      throttle = Math.min(1, m/(power*dt));   // final-step scale: dv = min(m, power*dt)
+      thrustDir.copy(_vrel).multiplyScalar(-1/m);
+    }
+  } else if(isTouch) {
     if(touchThrottle > 0) {
       throttle = Math.min(1, touchThrottle);
       thrustDir.copy(look);
@@ -66,7 +80,7 @@ export function applyJetpack(dt: number, look: THREE.Vector3, touchThrottle: num
   }
   const thrusting = throttle > 0 && !pstate.overheated;
   if(thrusting) {
-    vel.addScaledVector(thrustDir, CONFIG.jetThrust*throttle*dt);
+    vel.addScaledVector(thrustDir, power*throttle*dt);
     pstate.heat = Math.min(1, pstate.heat + CONFIG.heatRate*throttle*dt);
     if(pstate.heat >= 1) pstate.overheated = true;
   } else {

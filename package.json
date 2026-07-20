@@ -1,6 +1,6 @@
 {
   "name": "solar-swing",
-  "version": "0.9.0",
+  "version": "0.10.0",
   "private": true,
   "type": "module",
   "description": "3D orbital traversal sandbox — jetpack across a relative-scale solar system",

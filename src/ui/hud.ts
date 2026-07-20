@@ -18,7 +18,7 @@ export function applySky(darkness: number, tint: string): void {
   darkEl.style.opacity = darkness.toFixed(2);
 }
 
-export function updateHud(near: NearestInfo, relSpeed: number, noReturn: boolean, thrusting: boolean): void {
+export function updateHud(near: NearestInfo, relSpeed: number, noReturn: boolean, thrusting: boolean, braking: boolean): void {
   const speed = relSpeed;   // relative to the nearest body — this is what rendezvous needs
   // orbital + escape velocity at current distance from nearest body
   const reach = near.b.cloudR || near.b.R;
@@ -26,8 +26,8 @@ export function updateHud(near: NearestInfo, relSpeed: number, noReturn: boolean
   const vOrb = Math.sqrt(Math.max(0, gHere * near.dCenter));
   const vEsc = vOrb * Math.SQRT2;
   const orbiting = predOutcome === PRED.ORBIT && predLine.visible;
-  const mode = noReturn ? 'NO RETURN' : (pstate.grounded ? 'GROUNDED' : (thrusting ? 'BURNING' : (orbiting ? 'ORBIT' : 'COASTING')));
-  const modeColor = noReturn ? '#ff4433' : (mode === 'ORBIT' ? CONFIG.predColorOrbit : '#ffdd33');
+  const mode = noReturn ? 'NO RETURN' : (pstate.grounded ? 'GROUNDED' : (braking && thrusting ? 'BRAKING' : (thrusting ? 'BURNING' : (orbiting ? 'ORBIT' : 'COASTING'))));
+  const modeColor = noReturn ? '#ff4433' : (mode === 'ORBIT' ? CONFIG.predColorOrbit : (mode === 'BRAKING' ? CONFIG.predColorCoast : '#ffdd33'));
   const dShow = near.dSurf > 999 ? (near.dSurf/1000).toFixed(1)+'km' : Math.max(0,near.dSurf).toFixed(0)+'m';
   statsEl.innerHTML = `v: ${speed.toFixed(1)} m/s<br>`
     + `<span style="color:#8fa">${near.b.name} · ${dShow} · g ${pstate.gMag.toFixed(1)}</span><br>`

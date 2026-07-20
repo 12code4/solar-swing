@@ -19,7 +19,11 @@ export const stickL: Stick = { el:document.getElementById('stickL') as HTMLEleme
 export const stickR: Stick = { el:document.getElementById('stickR') as HTMLElement, knob:document.getElementById('knobR') as HTMLElement, id:null, ox:0, oy:0, x:0, y:0 };
 export const btnJump = document.getElementById('btnJump') as HTMLElement;
 export const btnEye  = document.getElementById('btnEye') as HTMLElement;
+export const btnBrake = document.getElementById('btnBrake') as HTMLElement;
 export const btnReset = document.getElementById('btnReset') as HTMLElement;
+
+// universal brake (v0.10 item 4) — held state, read by the loop
+export const brake = { held: false };
 
 // ----- linear throttle slider (v0.9 item 3) -----
 export const throttle = { value: 0 };
@@ -100,6 +104,10 @@ if(isTouch) {
   // JUMP is now a plain jump (v0.9: burning no longer needs it held)
   btnJump.addEventListener('touchstart', e => { e.preventDefault(); pstate.jumpQueued = true; btnJump.classList.add('on'); }, {passive:false});
   btnJump.addEventListener('touchend',   e => { e.preventDefault(); btnJump.classList.remove('on'); }, {passive:false});
+  // BRAKE: hold to retro-burn against the nearest body's frame (v0.10 item 4)
+  btnBrake.addEventListener('touchstart', e => { e.preventDefault(); brake.held = true;  btnBrake.classList.add('on'); }, {passive:false});
+  btnBrake.addEventListener('touchend',   e => { e.preventDefault(); brake.held = false; btnBrake.classList.remove('on'); }, {passive:false});
+  btnBrake.addEventListener('touchcancel', () => { brake.held = false; btnBrake.classList.remove('on'); });
   btnReset.addEventListener('touchstart', e => { e.preventDefault(); setThrottle(0); respawn(); }, {passive:false});
   // v0.6 item 5: hold EYE and the right stick orbits the camera; release eases back to aim.
   btnEye.addEventListener('touchstart', e => { e.preventDefault(); view.eyeHeld = true;  btnEye.classList.add('on'); }, {passive:false});

@@ -31,7 +31,7 @@ import { respawn } from './player/physics';
 import { runSeed } from './world/seed';
 import { tryPointerLock } from './input/desktop';
 import './input/touch';
-import { btnJump, btnEye, btnReset, thrEl } from './input/touch';
+import { btnJump, btnEye, btnBrake, btnReset, thrEl } from './input/touch';
 import { mmWrap } from './ui/minimap';
 import { startLoop } from './loop';
 
@@ -52,10 +52,11 @@ function startGame(): void {
   else {
     btnJump.style.display = 'flex';
     btnEye.style.display = 'flex';
+    btnBrake.style.display = 'flex';
     btnReset.style.display = 'flex';
     thrEl.style.display = 'flex';
     (document.getElementById('blockbar') as HTMLElement).style.display = 'none';
-    (document.getElementById('ui') as HTMLElement).innerHTML = '<b>LEFT</b> look = burn direction · <b>RIGHT</b> walk<br><b>SLIDER</b> throttle · aim up + throttle to lift off';
+    (document.getElementById('ui') as HTMLElement).innerHTML = '<b>LEFT</b> look = burn direction · <b>RIGHT</b> walk<br><b>SLIDER</b> throttle · hold <b>BRAKE</b> to kill speed';
     heatBox.style.bottom = ''; heatBox.style.top = '16px'; heatBox.style.right = '84px'; heatBox.style.width = '150px';
     // The bottom-right is where the right thumb lives (walk/burn stick), so the map goes
     // top-right under RESET, clear of both sticks and the JUMP button.

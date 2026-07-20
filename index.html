@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
-<title>SOLAR SWING — v0.9</title>
+<title>SOLAR SWING — v0.10</title>
 <style>
   * { margin:0; padding:0; box-sizing:border-box; }
   body { background:#04040c; overflow:hidden; font-family:'Courier New',monospace; touch-action:none; -webkit-user-select:none; user-select:none; }
@@ -97,6 +97,7 @@
   /* v0.9: buttons sit LEFT of the throttle slider rail */
   #btnJump { right:88px; bottom:24px; }
   #btnEye  { right:88px; bottom:100px; }   /* v0.6 item 5: near JUMP, same thumb rail */
+  #btnBrake { right:88px; bottom:176px; }  /* v0.10 item 4: hold = retro-burn */
 
   /* linear throttle slider (v0.9 item 3) — right edge, persistent value */
   #throttle {
@@ -151,12 +152,12 @@
 
 <div id="start">
   <h1>SOLAR SWING</h1>
-  <p>v0.9 &middot; seeded skies &middot; mercury to pluto</p>
+  <p>v0.10 &middot; full circle &middot; mercury to pluto</p>
   <p id="startHelp" style="color:#666;font-size:11px;">
     HOLD CLICK or SHIFT to burn &middot; aim with mouse &middot; heat is your fuel<br>
     you cannot out-thrust a big planet &mdash; burn sideways, skim, and let the world curve away<br>
     every load shuffles the planets &mdash; share a layout with its seed<br>
-    WASD walk &middot; SPACE jump &middot; RIGHT-CLICK build &middot; 1/2/3 type &middot; X remove &middot; R respawn
+    WASD walk &middot; SPACE jump &middot; HOLD B brake &middot; RIGHT-CLICK build &middot; 1/2/3 type &middot; X remove &middot; R respawn
   </p>
   <p id="seedline" style="color:#8fa;font-size:11px;letter-spacing:1px;"></p>
   <button id="playbtn">CLICK TO PLAY</button>
@@ -166,7 +167,7 @@
   <b>HOLD CLICK / SHIFT</b> burn along aim<br>
   <b>WASD</b> walk &middot; <b>SPACE</b> jump<br>
   <b>RIGHT-CLICK</b> place &middot; <b>X</b> remove<br>
-  <b>R</b> respawn &middot; <b>SCROLL</b> zoom
+  <b>HOLD B</b> brake &middot; <b>R</b> respawn &middot; <b>SCROLL</b> zoom
 </div>
 
 <div id="crosshair">
@@ -197,6 +198,7 @@
 <div class="stick" id="stickR"><div class="knob" id="knobR"></div></div>
 <div class="tbtn" id="btnJump">JUMP</div>
 <div class="tbtn" id="btnEye">EYE</div>
+<div class="tbtn" id="btnBrake">BRAKE</div>
 <div id="throttle"><div id="thrLabel">0%</div><div id="thrTrack"><div id="thrFill"></div></div></div>
 <div class="tbtn" id="btnReset">RESET</div>
 

@@ -2,6 +2,18 @@
 
 All notable changes to this project. Format loosely follows keepachangelog.com.
 
+## [0.10] - 2026-07-20 — FULL CIRCLE (executed from docs/v10-spec.md)
+### Fixed
+- HIGH-SPEED CAMERA LAG: the camera lerped its world position toward a moving target, leaving a steady-state lag of v/camSmooth (~52u behind at 400 m/s, with camDist 8 — look-around appeared dead). It now smooths the OFFSET in the player's frame: identical exponential feel at rest, zero velocity-proportional lag at speed. Aim basis, free look and constants untouched.
+### Added
+- Universal brake: hold B (desktop) or the BRAKE button (touch) for an auto-aimed retro-burn against velocity relative to the NEAREST body (the HUD's rendezvous frame). Same engine — jetThrust x brakeMult, same heat drain, overheat cuts it; the final step self-scales to null relative velocity exactly. It only removes energy, never adds. HUD shows BRAKING (coast blue).
+- EARTH cloud deck: additive rotating shell from the CC-BY 8k clouds map; appears only if the texture loads (never a dependency, like all maps).
+- Gas giant cloud shells slowly rotate (fixed per-planet rates) — bands wobble, Jupiter's spot drifts. Visual-only by design; cores, landings and blocks unaffected.
+### Changed
+- Asteroid belt is now a full sparse ring around the sun (was a 185-220 degree wedge): scatter covers the whole circle, the 3 cluster knots sit at seeded angles; 120 rocks, same radii, same size/budget rules. v0.9's whole-wedge rotation is superseded.
+### Known issues
+- Rocky planets still don't spin: mesh rotation would desync shapeFn collision unless composed in (belt-rock trick) AND ground-carry would need angular-velocity handling or the surface skids under your feet. Backlogged with that caveat.
+
 ## [0.9] - 2026-07-20 — SEEDED SKIES (executed from docs/v09-spec.md)
 ### Added
 - Run seed system: every page load rolls a fresh system layout — each planet starts at a seeded random point in its orbit, and the asteroid belt wedge rotates as one unit. `?seed=N` pins a layout (shareable); the start screen shows the seed. Only ORBITAL PHASE is seeded: terrain, craters, rock shapes/sizes stay fixed so world identity and the physical-rock budget are stable.

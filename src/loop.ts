@@ -5,7 +5,7 @@ import { sim } from './world/sim';
 import { updateOrbiters, bodyVelAt } from './bodies/orbits';
 import { gravityAt, nearestBody } from './bodies/gravity';
 import {
-  player, vel, pstate, camUp, camRight, camForward, view, getLookDir, freeLookOn,
+  player, vel, pstate, keys, camUp, camRight, camForward, view, getLookDir, freeLookOn,
   trailPts, trailGeo,
 } from './player/state';
 import { applyJetpack, applyWalking, applyAtmosphere, resolveSurface, resolveBlocks, respawn } from './player/physics';
@@ -13,7 +13,8 @@ import { updatePrediction, predLine, periMarker, periPoint, periValid } from './
 import { aimHit, ghost, BLOCK_TYPES, selectedBlock, blocks } from './build/building';
 import { drawMinimap } from './ui/minimap';
 import { updateHud, applySky, dot } from './ui/hud';
-import { stickL, stickR, throttle } from './input/touch';
+import { stickL, stickR, throttle, brake } from './input/touch';
+import { spinners } from './bodies/build-bodies';
 
 // ============================================================
 // Main loop — the per-frame orchestration. It owns the frame order and the fragile camera
@@ -27,6 +28,8 @@ const gAccum = new THREE.Vector3();
 const _bv2 = new THREE.Vector3();
 const _vrel = new THREE.Vector3();
 const _upHint = new THREE.Vector3();
+const _camOff = new THREE.Vector3();
+const _idealOff = new THREE.Vector3();
 
 function animate(now: number): void {
   requestAnimationFrame(animate);
@@ -39,6 +42,8 @@ function animate(now: number): void {
   // can ask for any t. Must run before anything reads a body centre this frame.
   sim.time += dt;
   updateOrbiters(sim.time);
+  // visual-only spin layers (v0.10 item 3): absolute from sim.time, so frame-rate free
+  for(const s of spinners) s.node.rotation.y = s.rate * sim.time;
   // Carry the player along with whatever they were standing on last frame, or Earth simply
   // slides out from under them at 50 m/s.
   if(pstate.grounded && pstate.groundBody) {
@@ -85,7 +90,9 @@ function animate(now: number): void {
   vel.addScaledVector(gAccum, dt);
 
   // --- jetpack: desktop = aim+hold, touch = linear throttle along the aim (v0.9) ---
-  const thrusting = applyJetpack(dt, look, isTouch ? throttle.value : 0);
+  // B / BRAKE button: retro-burn overrides thrust while held (v0.10 item 4)
+  const braking = keys['KeyB'] || brake.held || false;
+  const thrusting = applyJetpack(dt, look, isTouch ? throttle.value : 0, braking, near);
 
   // --- grounded walking (resets jumpQueued at its end) ---
   applyWalking(dt, near, localUp, thrusting, freeLook, stickR);
@@ -146,12 +153,15 @@ function animate(now: number): void {
       new THREE.Quaternion().setFromAxisAngle(axis, view.flPitch));
     hintRight = axis;
   }
-  const idealCamPos = player.position.clone()
-    .addScaledVector(camView, -view.camDist)
-    .addScaledVector(camUp, 1.5);
-  // v0.6 item 6: a fixed lerp factor makes the camera stiffer the faster you render, so at
-  // 160Hz the old lerp(0.12) chased ~2.7x harder than at 60. This form is dt-correct.
-  camera.position.lerp(idealCamPos, 1 - Math.exp(-CONFIG.camSmooth*dt));
+  // v0.10 item 1: smooth the camera in the PLAYER'S frame. Lerping the world position
+  // against a moving player leaves a steady-state lag of v/camSmooth (~52u at 400 m/s —
+  // the camera trails outside the whole action and look-around appears dead). Lerping the
+  // OFFSET keeps the exponential feel identical at rest and pins the camera at any speed.
+  // (The exp form stays dt-correct at any refresh rate — v0.6 item 6.)
+  _camOff.copy(camera.position).sub(player.position);
+  _idealOff.copy(camView).multiplyScalar(-view.camDist).addScaledVector(camUp, 1.5);
+  _camOff.lerp(_idealOff, 1 - Math.exp(-CONFIG.camSmooth*dt));
+  camera.position.copy(player.position).add(_camOff);
   // v0.9 item 2: full-range aim means the view can run nearly parallel to camUp, where the
   // old up-hint makes lookAt degenerate (roll flips at the poles). right x view is exactly
   // perpendicular to the view at ANY pitch and equals camUp at pitch 0, so it is the same
@@ -175,7 +185,7 @@ function animate(now: number): void {
   if(frameCount % CONFIG.minimapEvery === 0) drawMinimap();
 
   // --- HUD ---
-  if(frameCount%6===0) updateHud(near, relSpeed, noReturn, thrusting);
+  if(frameCount%6===0) updateHud(near, relSpeed, noReturn, thrusting, braking);
 
   if(composer) composer.render(); else renderer.render(scene, camera);
 }

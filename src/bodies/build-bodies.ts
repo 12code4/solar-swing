@@ -11,6 +11,10 @@ import type { Body, BodyCore, BodyDef, ShapeFn } from '../types';
 // build/aim raycast targets: rocky surfaces, cores, rings (NOT clouds, NOT sun)
 export const solidMeshes: THREE.Mesh[] = [];
 
+// visual-only spin layers (v0.10 item 3): the loop sets rotation.y = rate * sim.time.
+// Only ever cloud shells — nothing here is a physics body or a raycast target.
+export const spinners: { node: THREE.Object3D; rate: number }[] = [];
+
 const GAS_PALETTES: Record<string, string[]> = {
   jupiter: ['#c9a06f','#e8d5b0','#a9744a','#e0c298','#8f5a3a','#d9b98a'],
   saturn:  ['#e6d3a3','#d8c090','#c9b083','#efe2bf'],
@@ -218,6 +222,19 @@ function addBody(def: BodyDef, idx: number): Body {
     // mountains poke straight through the sky (plan.md milestone 6 flag). VISUAL ONLY — the
     // drag boundary below still uses the local surfR under you, which is the correct physics.
     if(def.atmo) addAtmoShell(group, R*mesh.userData.maxH, def.atmo.h, def.atmo.color, def.atmo.glow*CONFIG.atmoStrengthMult);
+    // v0.10 item 3: Earth's rotating cloud deck. A bonus layer like every texture — the
+    // shell only turns visible when the map actually loads, so a blocked CDN changes nothing.
+    if(def.name === 'EARTH') {
+      const cloudMat = new THREE.MeshStandardMaterial({
+        color:0xffffff, transparent:true, opacity:CONFIG.earthCloudOpacity,
+        blending:THREE.AdditiveBlending, depthWrite:false, roughness:1
+      });
+      const cloudMesh = new THREE.Mesh(new THREE.SphereGeometry(R*CONFIG.earthCloudLift, 64, 48), cloudMat);
+      cloudMesh.visible = false;
+      applyTexture(cloudMat, '8k_earth_clouds.jpg', () => { cloudMesh.visible = true; });
+      group.add(cloudMesh);
+      spinners.push({ node: cloudMesh, rate: CONFIG.earthCloudSpin });
+    }
     bodyCore = { name:def.name, center:group.position, R, shapeFn, cloudR:null,
              g:Math.min(CONFIG.gravityK*R, CONFIG.gravityMax), deadly:false, gas:false, atmo:def.atmo||null, star:false };
   }
@@ -239,6 +256,9 @@ function addBody(def: BodyDef, idx: number): Body {
     applyTexture(cloud.material, TEX_FILES[def.name],
                  () => liftVertexColors(cloud.geometry, CONFIG.texVertexLift));   // async; no-op on failure
     group.add(cloud);
+    // v0.10 item 3: slow cloud spin — bands wobble, Jupiter's spot drifts. The cloud shell
+    // is visual-only by design (physics is the core), so nothing else notices.
+    spinners.push({ node: cloud, rate: CONFIG.gasSpin * (0.7 + (def.name.length*37 % 10)/15) });
     addAtmoShell(group, cloudR, 0.06, new THREE.Color(GAS_PALETTES[def.paint!][0]).getHex(), CONFIG.atmoGasStrength);
 
     const coreShape = makeShapeFn(def.name.length*53+11, 0.7);
@@ -312,31 +332,29 @@ for(let g=0; g<CONFIG.beltShapeCount; g++){
   BELT_SHAPES.push({ shapeFn, geo });
 }
 
-// 3 denser knots inside the 185-220 arc; the rest is sparse scatter across the whole arc.
-const BELT_CLUSTERS = [
-  { ang: 192, au: 2.45 },
-  { ang: 205, au: 2.80 },
-  { ang: 214, au: 3.10 }
-];
+// v0.10 item 2: the belt is a full, sparse ring around the sun (the 185-220 wedge was a
+// v0.2 relic). 3 denser knots sit at seeded angles; the rest scatters over the whole circle.
+const BELT_CLUSTERS = [2.45, 2.80, 3.10].map((au, k) => ({
+  ang: seededRand(seedMix*7 + k*131)*360,
+  au
+}));
 
 const _rockDir = new THREE.Vector3();   // scratch for the rotation-composed shapeFn
 let beltPhysical = 0, beltDecor = 0;
 
-// v0.9 item 1: the whole belt wedge rotates as one unit per seed. Internal layout (clusters,
-// scatter, sizes, shapes) stays seeded-fixed so the physical-rock budget is deterministic.
-const beltPhase = seededRand(seedMix*31 + 7)*360;
-
 for(let i=0;i<CONFIG.beltCount;i++){
   const s = i*53+9;
 
-  // --- placement: cluster knot or sparse scatter ---
+  // --- placement: seeded cluster knot or full-circle sparse scatter (v0.10 item 2) ---
+  // Angles mix in the run seed; sizes/shapes keep their fixed seeds so the physical-rock
+  // budget stays deterministic across runs (v0.9 rule).
   let ang: number, au: number;
   if(seededRand(s*3) < CONFIG.beltClusterFrac){
     const c = BELT_CLUSTERS[Math.floor(seededRand(s*29)*BELT_CLUSTERS.length) % BELT_CLUSTERS.length];
-    ang = c.ang + beltPhase + (seededRand(s*31)-0.5)*6;
+    ang = c.ang + (seededRand(s*31)-0.5)*6;
     au  = c.au  + (seededRand(s*37)-0.5)*0.22;
   } else {
-    ang = 185 + beltPhase + seededRand(s)*35;
+    ang = seededRand(s + seedMix)*360;
     au  = 2.2 + seededRand(s*3+1)*1.1;
   }
   const y = (seededRand(s*5)-0.5)*CONFIG.beltYSpread;
