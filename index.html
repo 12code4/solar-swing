@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
-<title>SOLAR SWING — v0.5</title>
+<title>SOLAR SWING — v0.6</title>
 <style>
   * { margin:0; padding:0; box-sizing:border-box; }
   body { background:#04040c; overflow:hidden; font-family:'Courier New',monospace; touch-action:none; -webkit-user-select:none; user-select:none; }
@@ -95,7 +95,27 @@
     display:none; align-items:center; justify-content:center; z-index:6; }
   .tbtn.on { border-color:#ffdd33; color:#ffdd33; }
   #btnJump { right:24px; bottom:200px; }
+  #btnEye  { right:24px; bottom:276px; }   /* v0.6 item 5: near JUMP, same thumb rail */
   #btnReset { right:24px; top:70px; width:52px; height:52px; }
+
+  /* minimap (v0.6 item 4) */
+  #mmback { position:fixed; inset:0; background:rgba(2,2,8,0.72); display:none; z-index:7; }
+  #mmback.on { display:block; }
+  #mmwrap {
+    position:fixed; right:16px; bottom:76px;   /* desktop: sits above the heat bar */
+    width:150px; height:150px;
+    background:rgba(0,0,0,0.55);
+    border:1px solid rgba(255,255,255,0.15);
+    border-radius:6px; overflow:hidden; z-index:8;
+    pointer-events:none;                        /* desktop uses M; pointer lock eats clicks */
+  }
+  #mmwrap.exp {
+    right:auto; bottom:auto; left:50%; top:50%;
+    transform:translate(-50%,-50%);
+    width:70vmin; height:70vmin;
+    border-color:rgba(255,220,50,0.4);
+  }
+  #minimap { display:block; width:100%; height:100%; }
 
   @media (max-width: 820px) {
     #ui { font-size:10px; line-height:1.7; padding:8px 10px; }
@@ -111,7 +131,7 @@
 
 <div id="start">
   <h1>SOLAR SWING</h1>
-  <p>v0.5 &middot; beautiful orbits &middot; mercury to pluto</p>
+  <p>v0.6 &middot; the system moves &middot; mercury to pluto</p>
   <p id="startHelp" style="color:#666;font-size:11px;">
     HOLD CLICK or SHIFT to burn &middot; aim with mouse &middot; heat is your fuel<br>
     you cannot out-thrust a big planet &mdash; burn sideways, skim, and let the world curve away<br>
@@ -148,9 +168,13 @@
   <div class="slot" id="slot2">3 BEACON</div>
 </div>
 
+<div id="mmback"></div>
+<div id="mmwrap"><canvas id="minimap"></canvas></div>
+
 <div class="stick" id="stickL"><div class="knob" id="knobL"></div></div>
 <div class="stick" id="stickR"><div class="knob" id="knobR"></div></div>
 <div class="tbtn" id="btnJump">JUMP</div>
+<div class="tbtn" id="btnEye">EYE</div>
 <div class="tbtn" id="btnReset">RESET</div>
 
 <script type="importmap">
@@ -185,7 +209,14 @@ const CONFIG = {
   overheatUnlock: 0.3,
   buildRange: 16,
   camDist: 8,
-  camLerp: 0.12,
+  camSmooth: 7.7,        // camera follow rate. blend = 1-exp(-camSmooth*dt), so the feel is
+                         // identical at 60Hz and 160Hz. 7.7 reproduces v0.5's lerp(0.12) at
+                         // 60fps exactly: 1-exp(-7.7/60) = 0.120.
+  // free look (v0.6 item 5) — an ADDITIVE camera offset only; never touches the aim basis
+  freeLookSens:  0.0018,   // mouse rad/px, matches the normal look sensitivity
+  freeLookRate:  2.2,      // touch: right-stick rad/s while EYE is held
+  freeLookReturn: 12,      // ease-back rate; 1-exp(-12*0.25) = 95% home in ~0.25s
+  freeLookMaxPitch: 1.35,
   upBlend: 3.5,
   drag: 1.0,             // vacuum: orbits must not decay (atmospheres brake instead)
   gasInteriorDrag: 0.8,  // soup, but a fast Oberth dive-through survives it
@@ -233,6 +264,38 @@ const CONFIG = {
   bloomStrength: 0.55,
   bloomRadius: 0.4,
   bloomThreshold: 0.82,     // luminance cut, applied to linear (pre-tone-map) values
+  // kinematic orbits (v0.6 item 1)
+  orbitTimeScale: 1.0,      // global multiplier on every omega — tune orbit speed to taste
+  // textured geometry (v0.6 item 2) — SphereGeometry segment counts; UVs the texture maps need
+  rockySegs: [96, 64],
+  gasSegs:   [64, 48],
+  texVertexLift: 0.75,      // on texture load, lerp the dark v0.5 palettes this far toward
+                            // white so the map reads through; surviving variation scales by
+                            // (1-this). Never applied if the texture fails to load.
+  // asteroid belt (v0.6 item 3)
+  beltCount:       120,     // total rocks drawn
+  beltShapeCount:  5,       // shared unit-radius geometries reused across all rocks
+  beltMajors:      4,       // "majors" above the normal size range — always landable
+  beltMajorMinR:   46,
+  beltMajorRangeR: 16,
+  beltMinR:        8,
+  beltMaxR:        45,
+  beltSizeSkew:    2.2,     // R = min + range*u^skew. >1 skews small, which is what keeps
+                            // the physical-rock count (and so bodies[]) under budget.
+  beltDecorMaxR:   12,      // rocks under this are decor-only: no bodies[] entry, no raycast
+  beltClusterFrac: 0.62,    // share of rocks pulled into clusters vs sparse scatter
+  beltYSpread:     2000,
+  // minimap (v0.6 item 4)
+  minimapCorner:   150,     // px, corner mode
+  minimapExpandVMin: 70,    // vmin, expanded mode (mirrored in CSS #mmwrap.exp)
+  minimapEvery:    6,       // redraw every N frames
+  minimapLogK:     1000,    // rMap = log10(1 + dist/minimapLogK), then normalised to fit.
+                            // Lower spreads the inner system further out. NOTE: the spec wrote
+                            // this as a leading multiplier k*log10(...), but any leading factor
+                            // cancels once you scale-to-fit the disc — the divisor is the knob
+                            // that actually changes the mapping, so k lives here instead.
+  minimapArrowWorld: 2500,  // world distance probed ahead of the player to aim the vel arrow
+  minimapArrowPx:  11,
   // scale rulers — radii keep real ratios, distances compressed
   AU: 3600,
   earthR: 160
@@ -383,6 +446,42 @@ function orbitPos(au, angleDeg, y) {
   return new THREE.Vector3(Math.cos(deg(angleDeg))*au*CONFIG.AU, y, Math.sin(deg(angleDeg))*au*CONFIG.AU);
 }
 
+// ============================================================
+// Kinematic orbits (v0.6 item 1)
+// Circular, XZ plane, all prograde. NOT force-simulated: position is an analytic function
+// of t, which is what lets the predictor evaluate any future time exactly and cheaply.
+// Speed comes from the same sun field the player feels — v = sqrt(g_sun(r)*r), which puts
+// Earth at ~50 m/s. Each body keeps its fixed y offset; r is the XZ radius.
+// Anything that orbits carries these four fields, so bodyPosAt/bodyVelAt work on bodies
+// and on decor rocks alike.
+// ============================================================
+function orbitParams(orbitR, yOff, angDeg) {
+  let omega = 0;
+  if(orbitR > 0) {
+    const gSun = CONFIG.sunGravity * (SUN_R / Math.max(orbitR, SUN_R))**2;
+    omega = (Math.sqrt(gSun*orbitR)/orbitR) * CONFIG.orbitTimeScale;
+  }
+  return { orbitR, yOff, ang0: deg(angDeg), omega };
+}
+function bodyPosAt(o, t, out) {
+  const a = o.ang0 + o.omega*t;
+  return out.set(Math.cos(a)*o.orbitR, o.yOff, Math.sin(a)*o.orbitR);
+}
+// Analytic tangent — magnitude is exactly the orbital speed v.
+function bodyVelAt(o, t, out) {
+  const a = o.ang0 + o.omega*t;
+  const v = o.orbitR*o.omega;
+  return out.set(-Math.sin(a)*v, 0, Math.cos(a)*v);
+}
+const orbiters = [];      // every node that moves: all bodies + decor-only belt rocks
+function updateOrbiters(t) {
+  for(const o of orbiters){
+    o.prev.copy(o.node.position);
+    bodyPosAt(o, t, o.node.position);
+    o.node.updateMatrixWorld(true);   // physics runs before render; blocks ride these matrices
+  }
+}
+
 const GAS_PALETTES = {
   jupiter: ['#c9a06f','#e8d5b0','#a9744a','#e0c298','#8f5a3a','#d9b98a'],
   saturn:  ['#e6d3a3','#d8c090','#c9b083','#efe2bf'],
@@ -406,13 +505,15 @@ const BODY_DEFS = [
     atmo:{h:0.10, color:0xd9a066, glow:0.22, drag:0.3, sky:'#b4713d'} },
   { name:'JUPITER', type:'gas',   km:69911, au:5.20, ang:205, y: 350, paint:'jupiter', bands:12 },
   { name:'SATURN',  type:'gas',   km:58232, au:9.50, ang:215, y:-450, paint:'saturn',  bands:9,
-    rings:[[1.24,1.72],[1.78,2.1]], ringTilt:27 },
+    rings:[[1.24,1.72],[1.78,2.1]], ringTilt:27, ringTex:'2k_saturn_ring_alpha.png' },
   { name:'URANUS',  type:'gas',   km:25362, au:19.2, ang:222, y: 600, paint:'uranus',  bands:5,
     rings:[[1.4,1.55]], ringTilt:98 },
   { name:'NEPTUNE', type:'gas',   km:24622, au:30.1, ang:228, y:-500, paint:'neptune', bands:7 },
   { name:'PLUTO',   type:'rocky', km:1188,  au:39.5, ang:233, y: 300, paint:'pluto', craters:true,
     atmo:{h:0.08, color:0xb0c4de, glow:0.15, drag:0.15} }
 ];
+
+const SUN_R = BODY_DEFS.find(d=>d.star).R;   // orbital speeds are derived from the sun's field
 
 const bodies = [];
 const solidMeshes = [];   // build/aim raycast targets: rocky surfaces, cores, rings (NOT clouds, NOT sun)
@@ -465,23 +566,98 @@ function gasBandColor(paint, dir, bands, seed) {
   return new THREE.Color(pal[idx]);
 }
 
-function buildRockyMesh(R, shapeFn, paint, minDetail) {
-  let detail = R > 120 ? 5 : (R > 40 ? 4 : 3);
-  if(minDetail) detail = Math.max(detail, minDetail); // cratered bodies need verts to show bowls
-  const geo = new THREE.IcosahedronGeometry(R, detail);
+// ============================================================
+// NASA/CC-BY textures (v0.6 item 2)
+// Every texture is a bonus layer, never a dependency. TextureLoader is async and nothing
+// waits on it: the mesh is built and rendered from vertex colors immediately, and a map is
+// swapped in later IF it arrives. A 404, an offline browser, or a blocked CDN therefore
+// lands on exactly the v0.5 procedural look rather than a black planet.
+// Source: solarsystemscope.com 2k set, CC BY 4.0.
+// ============================================================
+const TEX_BASE = 'https://www.solarsystemscope.com/textures/download/';
+const TEX_FILES = {
+  MERCURY: '2k_mercury.jpg',
+  VENUS:   '2k_venus_atmosphere.jpg',
+  EARTH:   '2k_earth_daymap.jpg',
+  MARS:    '2k_mars.jpg',
+  JUPITER: '2k_jupiter.jpg',
+  SATURN:  '2k_saturn.jpg',
+  URANUS:  '2k_uranus.jpg',
+  NEPTUNE: '2k_neptune.jpg'
+  // PLUTO: procedural only, by design
+};
+const texLoader = new THREE.TextureLoader();
+texLoader.setCrossOrigin('anonymous');
+// capabilities is absent under a headless/stub renderer, hence the guard + the spec's fallback of 8
+const MAX_ANISO = renderer.capabilities?.getMaxAnisotropy?.() ?? 8;
+
+// The v0.5 palettes were the ONLY colour source, so they are dark by design (mean luminance
+// runs 0.13 on Neptune to 0.61 on Saturn). Multiplied straight into a texture map they would
+// crush it toward black and the texture would be pointless. The spec's fix is to brighten the
+// palettes toward white — but its own accept criteria also demand that a 404 still render the
+// v0.5 look, and a build-time brighten would wreck that. So the lift happens ONLY once a
+// texture actually lands: textured path gets a clearly visible map with subtle procedural
+// variation on top, fallback path keeps v0.5 pixel-for-pixel.
+// Lerping toward white by t scales the surviving variation by (1-t).
+function liftVertexColors(geo, t) {
+  const col = geo.getAttribute('color');
+  if(!col || geo.userData.colorsLifted) return;   // idempotent: never double-lift
+  for(let i=0;i<col.count;i++){
+    col.setXYZ(i, col.getX(i)*(1-t)+t, col.getY(i)*(1-t)+t, col.getZ(i)*(1-t)+t);
+  }
+  col.needsUpdate = true;
+  geo.userData.colorsLifted = true;
+}
+
+// Attaches a map to an EXISTING material after the fact. Returns nothing: callers must never
+// depend on the result. onError deliberately does nothing at all — leaving material.map null
+// is the fallback, and vertex colors already carry the look.
+function applyTexture(mat, file, onLoad) {
+  if(!file) return;
+  texLoader.load(
+    TEX_BASE + file,
+    tex => {
+      tex.colorSpace = THREE.SRGBColorSpace;
+      tex.anisotropy = MAX_ANISO;
+      mat.map = tex;
+      mat.needsUpdate = true;   // recompile: the shader was built without a map
+      if(onLoad) onLoad(tex);
+    },
+    undefined,
+    () => { /* texture-less by design: vertexColors keep the v0.5 render */ }
+  );
+}
+
+// segs = [widthSegs, heightSegs] switches to SphereGeometry, which carries the UVs a texture
+// map needs (v0.6 item 2). Passed only by textured bodies: gas-giant cores and belt rocks are
+// never textured, so they stay on the cheaper Icosahedron and keep their vertex budget for
+// item 3's populated belt.
+function buildRockyMesh(R, shapeFn, paint, minDetail, segs) {
+  let geo;
+  if(segs) {
+    geo = new THREE.SphereGeometry(R, segs[0], segs[1]);
+  } else {
+    let detail = R > 120 ? 5 : (R > 40 ? 4 : 3);
+    if(minDetail) detail = Math.max(detail, minDetail); // cratered bodies need verts to show bowls
+    geo = new THREE.IcosahedronGeometry(R, detail);
+  }
   const posAttr = geo.getAttribute('position');
   const colors = new Float32Array(posAttr.count*3);
   const v = new THREE.Vector3();
+  let maxH = 1;
   for(let i=0;i<posAttr.count;i++){
     v.fromBufferAttribute(posAttr, i).normalize();
     const h = shapeFn(v);
+    if(h > maxH) maxH = h;   // v0.6 item 6: the real peak, measured off the real vertices
     posAttr.setXYZ(i, v.x*R*h, v.y*R*h, v.z*R*h);
     const col = paintVertex(paint, v, h, i);
     colors[i*3]=col.r; colors[i*3+1]=col.g; colors[i*3+2]=col.b;
   }
   geo.setAttribute('color', new THREE.Float32BufferAttribute(colors,3));
   geo.computeVertexNormals();
-  return new THREE.Mesh(geo, new THREE.MeshStandardMaterial({vertexColors:true, flatShading:true, roughness:0.95, metalness:0}));
+  const mesh = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({vertexColors:true, flatShading:true, roughness:0.95, metalness:0}));
+  mesh.userData.maxH = maxH;   // peak terrain radius multiplier; the atmosphere shell reads it
+  return mesh;
 }
 
 // Fresnel atmosphere shell. BackSide + depthTest means only the far hemisphere survives,
@@ -518,7 +694,7 @@ void main() {
   #include <colorspace_fragment>
 }`;
 
-function addAtmoShell(center, baseR, h, color, strength) {
+function addAtmoShell(parent, baseR, h, color, strength) {
   const shell = new THREE.Mesh(
     new THREE.IcosahedronGeometry(baseR*(1+h), 4),
     new THREE.ShaderMaterial({
@@ -535,41 +711,49 @@ function addAtmoShell(center, baseR, h, color, strength) {
       blending: THREE.AdditiveBlending
     })
   );
-  shell.position.copy(center);
-  scene.add(shell);
+  parent.add(shell);   // local origin: the whole body group moves as one (v0.6 item 1)
   return shell;
 }
 
+// Every body lives inside its own Group at the world origin of that body; all children sit
+// at LOCAL origin. body.center aliases group.position, so it stays the live world centre
+// exactly as it did in v0.5 when it aliased mesh.position.
 function addBody(def) {
-  const center = def.star ? def.pos.clone() : orbitPos(def.au, def.ang, def.y);
+  const op = def.star ? orbitParams(0, 0, 0) : orbitParams(def.au*CONFIG.AU, def.y, def.ang);
+  const group = new THREE.Group();
+  bodyPosAt(op, 0, group.position);
+  group.userData.orbitNode = true;   // placeBlock walks up to find this
+  scene.add(group);
   let body;
 
   if(def.star) {
     const mesh = new THREE.Mesh(new THREE.IcosahedronGeometry(def.R,3), new THREE.MeshBasicMaterial({color:0xffd98a}));
-    mesh.position.copy(center);
-    scene.add(mesh);
+    group.add(mesh);
     const sprite = new THREE.Sprite(new THREE.SpriteMaterial({map:makeGlowTexture(), blending:THREE.AdditiveBlending, depthWrite:false, transparent:true}));
     sprite.scale.setScalar(def.R*7);
-    sprite.position.copy(center);
-    scene.add(sprite);
-    body = { name:def.name, center:mesh.position, R:def.R, shapeFn:null, cloudR:null,
-             g:CONFIG.sunGravity, deadly:true, gas:false, atmo:null };
+    group.add(sprite);
+    body = { name:def.name, center:group.position, R:def.R, shapeFn:null, cloudR:null,
+             g:CONFIG.sunGravity, deadly:true, gas:false, atmo:null, star:true };
   }
   else if(def.type === 'rocky') {
     const R = kmToUnits(def.km);
     const shapeFn = makeShapeFn(def.name.length*37+5, 1.0, def.craters);
-    const mesh = buildRockyMesh(R, shapeFn, def.paint, def.craters ? CONFIG.craterDetail : 0);
-    mesh.position.copy(center);
-    scene.add(mesh);
+    const mesh = buildRockyMesh(R, shapeFn, def.paint, def.craters ? CONFIG.craterDetail : 0, CONFIG.rockySegs);
+    applyTexture(mesh.material, TEX_FILES[def.name],
+                 () => liftVertexColors(mesh.geometry, CONFIG.texVertexLift));   // async; no-op on failure
+    group.add(mesh);
     solidMeshes.push(mesh);
-    if(def.atmo) addAtmoShell(mesh.position, R, def.atmo.h, def.atmo.color, def.atmo.glow*CONFIG.atmoStrengthMult);
-    body = { name:def.name, center:mesh.position, R, shapeFn, cloudR:null,
-             g:Math.min(CONFIG.gravityK*R, CONFIG.gravityMax), deadly:false, gas:false, atmo:def.atmo||null };
+    // v0.6 item 6: size the shell off the PEAK terrain radius, not the base R, or the tallest
+    // mountains poke straight through the sky (plan.md milestone 6 flag). VISUAL ONLY — the
+    // drag boundary below still uses the local surfR under you, which is the correct physics.
+    if(def.atmo) addAtmoShell(group, R*mesh.userData.maxH, def.atmo.h, def.atmo.color, def.atmo.glow*CONFIG.atmoStrengthMult);
+    body = { name:def.name, center:group.position, R, shapeFn, cloudR:null,
+             g:Math.min(CONFIG.gravityK*R, CONFIG.gravityMax), deadly:false, gas:false, atmo:def.atmo||null, star:false };
   }
   else { // gas giant: banded cloud shell + tiny dark solid core
     const cloudR = kmToUnits(def.km);
     const coreR = cloudR*0.1;
-    const cloudGeo = new THREE.IcosahedronGeometry(cloudR, 4);
+    const cloudGeo = new THREE.SphereGeometry(cloudR, CONFIG.gasSegs[0], CONFIG.gasSegs[1]);
     const posAttr = cloudGeo.getAttribute('position');
     const colors = new Float32Array(posAttr.count*3);
     const v = new THREE.Vector3();
@@ -581,62 +765,149 @@ function addBody(def) {
     }
     cloudGeo.setAttribute('color', new THREE.Float32BufferAttribute(colors,3));
     const cloud = new THREE.Mesh(cloudGeo, new THREE.MeshStandardMaterial({vertexColors:true, roughness:1, metalness:0, transparent:true, opacity:0.96, depthWrite:true}));
-    cloud.position.copy(center);
-    scene.add(cloud);
-    addAtmoShell(cloud.position, cloudR, 0.06, new THREE.Color(GAS_PALETTES[def.paint][0]).getHex(), CONFIG.atmoGasStrength);
+    applyTexture(cloud.material, TEX_FILES[def.name],
+                 () => liftVertexColors(cloud.geometry, CONFIG.texVertexLift));   // async; no-op on failure
+    group.add(cloud);
+    addAtmoShell(group, cloudR, 0.06, new THREE.Color(GAS_PALETTES[def.paint][0]).getHex(), CONFIG.atmoGasStrength);
 
     const coreShape = makeShapeFn(def.name.length*53+11, 0.7);
     const core = buildRockyMesh(coreR, coreShape, 'core');
-    core.position.copy(center);
-    scene.add(core);
+    group.add(core);
     solidMeshes.push(core);
 
     if(def.rings) {
       for(const [ri, ro] of def.rings) {
-        const ringMesh = new THREE.Mesh(
-          new THREE.RingGeometry(cloudR*ri, cloudR*ro, 96),
-          new THREE.MeshStandardMaterial({color:0xd8c9a3, roughness:1, metalness:0, side:THREE.DoubleSide, transparent:true, opacity:0.7})
-        );
-        ringMesh.position.copy(center);
+        const ringGeo = new THREE.RingGeometry(cloudR*ri, cloudR*ro, 96);
+        // RingGeometry's stock UVs are a square projection of the disc, which smears a ring
+        // texture into garbage. A ring map is a radial strip, so remap u to normalised radius
+        // and pin v mid-strip. Harmless when no texture loads.
+        {
+          const rp = ringGeo.getAttribute('position');
+          const ruv = ringGeo.getAttribute('uv');
+          const rIn = cloudR*ri, rOut = cloudR*ro;
+          for(let i=0;i<rp.count;i++){
+            const rr = Math.hypot(rp.getX(i), rp.getY(i));
+            ruv.setXY(i, (rr - rIn)/(rOut - rIn), 0.5);
+          }
+          ruv.needsUpdate = true;
+        }
+        const ringMat = new THREE.MeshStandardMaterial({color:0xd8c9a3, roughness:1, metalness:0, side:THREE.DoubleSide, transparent:true, opacity:0.7});
+        // the ring map carries its own alpha, so let it drive opacity once it actually lands
+        applyTexture(ringMat, def.ringTex, () => { ringMat.color.setHex(0xffffff); ringMat.opacity = 1; });
+        const ringMesh = new THREE.Mesh(ringGeo, ringMat);
         ringMesh.rotation.x = deg(90 - def.ringTilt);
-        scene.add(ringMesh);
+        group.add(ringMesh);
         solidMeshes.push(ringMesh);
       }
     }
 
-    body = { name:def.name, center:cloud.position, R:coreR, shapeFn:coreShape, cloudR,
-             g:Math.min(CONFIG.gravityK*cloudR, CONFIG.gravityMax), deadly:false, gas:true, atmo:null };
+    body = { name:def.name, center:group.position, R:coreR, shapeFn:coreShape, cloudR,
+             g:Math.min(CONFIG.gravityK*cloudR, CONFIG.gravityMax), deadly:false, gas:true, atmo:null, star:false };
   }
+  Object.assign(body, op);
+  body.node = group;
+  body.prev = group.position.clone();
   bodies.push(body);
+  orbiters.push(body);
   return body;
 }
 
 BODY_DEFS.forEach(addBody);
 
-// Asteroid belt between Mars and Jupiter
-for(let i=0;i<34;i++){
-  const seed = i*53+9;
-  const ang = 185 + seededRand(seed)*35;
-  const au = 2.2 + seededRand(seed*3)*1.1;
-  const y = (seededRand(seed*5)-0.5)*1600;
-  const R = 15 + seededRand(seed*7)*30;
-  const shapeFn = makeShapeFn(seed, 1.4);
-  const geo = new THREE.IcosahedronGeometry(R, 3);
-  const posAttr = geo.getAttribute('position');
+// ============================================================
+// Asteroid belt (v0.6 item 3)
+// 120 rocks off 5 shared unit-radius geometries. Because each geometry is built at radius 1
+// with its displacement baked in, a rock's uniform scale IS its collision radius R, and
+// surfR = R*shapeFn(dir) stays exactly the identity the rest of the engine relies on.
+//
+// Rotation is the subtle part: the spec wants random static rotation, but shapeFn is queried
+// with a WORLD-space direction. Rotating the mesh alone would slide the visible surface off
+// the collision surface. So each rock composes the inverse of its own rotation into its
+// shapeFn — visual and physics stay locked together.
+//
+// Budget: rocks under beltDecorMaxR are decor-only (no bodies[] entry, no raycast target),
+// which is what keeps bodies[] inside the <=~90 ceiling while still drawing 120 rocks.
+// ============================================================
+const BELT_SHAPES = [];
+for(let g=0; g<CONFIG.beltShapeCount; g++){
+  const shapeFn = makeShapeFn(g*97+13, 1.4);
+  const geo = new THREE.IcosahedronGeometry(1, 3);
+  const pa = geo.getAttribute('position');
   const v = new THREE.Vector3();
-  for(let j=0;j<posAttr.count;j++){
-    v.fromBufferAttribute(posAttr, j).normalize();
-    const r = R*shapeFn(v);
-    posAttr.setXYZ(j, v.x*r, v.y*r, v.z*r);
+  for(let j=0;j<pa.count;j++){
+    v.fromBufferAttribute(pa, j).normalize();
+    const r = shapeFn(v);
+    pa.setXYZ(j, v.x*r, v.y*r, v.z*r);
   }
   geo.computeVertexNormals();
-  const col = new THREE.Color().setHSL(0.07+seededRand(seed*11)*0.05, 0.15, 0.3+seededRand(seed*13)*0.1);
-  const mesh = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({color:col, flatShading:true, roughness:0.95, metalness:0}));
-  mesh.position.copy(orbitPos(au, ang, y));
-  scene.add(mesh);
-  solidMeshes.push(mesh);
-  bodies.push({ name:'BELT ROCK', center:mesh.position, R, shapeFn, cloudR:null,
-                g:Math.min(CONFIG.gravityK*R, CONFIG.gravityMax), deadly:false, gas:false, atmo:null });
+  BELT_SHAPES.push({ shapeFn, geo });
+}
+
+// 3 denser knots inside the 185-220 arc; the rest is sparse scatter across the whole arc.
+const BELT_CLUSTERS = [
+  { ang: 192, au: 2.45 },
+  { ang: 205, au: 2.80 },
+  { ang: 214, au: 3.10 }
+];
+
+const _rockDir = new THREE.Vector3();   // scratch for the rotation-composed shapeFn
+let beltPhysical = 0, beltDecor = 0;
+
+for(let i=0;i<CONFIG.beltCount;i++){
+  const s = i*53+9;
+
+  // --- placement: cluster knot or sparse scatter ---
+  let ang, au;
+  if(seededRand(s*3) < CONFIG.beltClusterFrac){
+    const c = BELT_CLUSTERS[Math.floor(seededRand(s*29)*BELT_CLUSTERS.length) % BELT_CLUSTERS.length];
+    ang = c.ang + (seededRand(s*31)-0.5)*6;
+    au  = c.au  + (seededRand(s*37)-0.5)*0.22;
+  } else {
+    ang = 185 + seededRand(s)*35;
+    au  = 2.2 + seededRand(s*3+1)*1.1;
+  }
+  const y = (seededRand(s*5)-0.5)*CONFIG.beltYSpread;
+
+  // --- size: skewed small so ~a third land under beltDecorMaxR and bodies[] stays in budget ---
+  const R = (i < CONFIG.beltMajors)
+    ? CONFIG.beltMajorMinR + seededRand(s*23)*CONFIG.beltMajorRangeR
+    : CONFIG.beltMinR + (CONFIG.beltMaxR-CONFIG.beltMinR)*Math.pow(seededRand(s*7), CONFIG.beltSizeSkew);
+
+  // --- shared geometry + static rotation ---
+  const base = BELT_SHAPES[Math.floor(seededRand(s*17)*BELT_SHAPES.length) % BELT_SHAPES.length];
+  const q = new THREE.Quaternion().setFromEuler(new THREE.Euler(
+    seededRand(s*41)*Math.PI*2, seededRand(s*43)*Math.PI*2, seededRand(s*47)*Math.PI*2));
+
+  const col = new THREE.Color().setHSL(0.07+seededRand(s*11)*0.05, 0.15, 0.3+seededRand(s*13)*0.1);
+  const mesh = new THREE.Mesh(base.geo, new THREE.MeshStandardMaterial({color:col, flatShading:true, roughness:0.95, metalness:0}));
+  mesh.scale.setScalar(R);        // unit geometry -> scale is the radius
+  mesh.quaternion.copy(q);
+
+  const op = orbitParams(au*CONFIG.AU, y, ang);
+  const group = new THREE.Group();
+  bodyPosAt(op, 0, group.position);
+  group.userData.orbitNode = true;
+  group.add(mesh);
+  scene.add(group);
+
+  if(R < CONFIG.beltDecorMaxR) {
+    // Decor only: drawn and orbiting, but not a gravity source and not landable. Being under
+    // beltDecorMaxR they read as pebbles, so nobody lines up a landing on one.
+    orbiters.push({ node:group, prev:group.position.clone(), ...op });
+    beltDecor++;
+  } else {
+    solidMeshes.push(mesh);
+    const qi = q.clone().invert();
+    // compose the rotation into shapeFn so collision matches the rotated mesh
+    const shapeFn = dir => base.shapeFn(_rockDir.copy(dir).applyQuaternion(qi));
+    const rock = { name:'BELT ROCK', center:group.position, R, shapeFn, cloudR:null,
+                   g:Math.min(CONFIG.gravityK*R, CONFIG.gravityMax), deadly:false, gas:false, atmo:null,
+                   star:false, belt:true, node:group, prev:group.position.clone() };
+    Object.assign(rock, op);
+    bodies.push(rock);
+    orbiters.push(rock);
+    beltPhysical++;
+  }
 }
 
 function nearestBody(p) {
@@ -657,16 +928,24 @@ function nearestBody(p) {
 // own reach) and the dominant body (largest gravity contribution here). The orbit aids read
 // those instead of re-walking the body list — the falloff maths stays defined exactly once.
 // gravInfo describes the LAST position passed in, so read it straight after the call.
+// v0.6: takes t. Body centres are evaluated AT t, so the predictor sees where a planet WILL
+// be, not where it is now. The live sim passes simTime; the predictor passes future times.
 const _gd = new THREE.Vector3();
+const _bc = new THREE.Vector3();
 const gravInfo = { nearestD: Infinity, nearestReach: 1, dominant: null, dominantG: 0 };
-function gravityAt(pos, out) {
+function gravityAt(pos, t, out) {
   out.set(0,0,0);
   let inside = false;
   let bestRatio = Infinity;
   gravInfo.nearestD = Infinity; gravInfo.nearestReach = 1;
   gravInfo.dominant = null; gravInfo.dominantG = 0;
   for(const b of bodies){
-    _gd.copy(b.center).sub(pos);
+    // PERF EXCEPTION (spec item 1): belt rocks are read at their CURRENT centre instead of
+    // being re-evaluated at t. Their gravity is negligible and this keeps ~80 rocks off the
+    // trig path in the predictor's inner loop. For the live sim (t === simTime) b.center IS
+    // bodyPosAt(b, t), so nothing is approximated there. Planets and the sun are exact.
+    if(b.belt) _bc.copy(b.center); else bodyPosAt(b, t, _bc);
+    _gd.copy(_bc).sub(pos);
     const d = _gd.length();
     const reach = b.cloudR || b.R;
     let g = b.g * (reach / Math.max(d, reach))**2;
@@ -677,7 +956,10 @@ function gravityAt(pos, out) {
       bestRatio = ratio; gravInfo.nearestD = d; gravInfo.nearestReach = reach;
     }
     if(g > gravInfo.dominantG) { gravInfo.dominantG = g; gravInfo.dominant = b; }
-    if(g < 0.02) continue;
+    // The sun is NEVER culled. Its pull at Saturn is 0.008 — under the pebble threshold —
+    // but it is the force every planet's orbit is derived from, so dropping it would leave
+    // the outer system orbiting something the player cannot feel.
+    if(g < 0.02 && !b.star) continue;
     out.addScaledVector(_gd.normalize(), g);
   }
   return inside;
@@ -703,7 +985,7 @@ const predLine = new THREE.Line(predGeo, new THREE.LineBasicMaterial({color:0x66
 predLine.frustumCulled = false;
 scene.add(predLine);
 const _pp = new THREE.Vector3(), _pv = new THREE.Vector3(), _pa = new THREE.Vector3();
-const _r0 = new THREE.Vector3(), _r1 = new THREE.Vector3();
+const _r0 = new THREE.Vector3(), _r1 = new THREE.Vector3(), _dc = new THREE.Vector3();
 
 // Periapsis marker — the "burn here" Oberth signpost. Deliberately NOT in solidMeshes:
 // it must never be a build/aim raycast target.
@@ -726,14 +1008,15 @@ function updatePrediction() {
   let stopped = false;
   let dom = null, d0 = 0, swept = 0, peri = Infinity, backNearStart = false;
   periValid = false;
+  let tPred = simTime;   // the predictor walks its own clock forward alongside the path
 
   for(let i=0;i<CONFIG.predictSteps;i++){
     if(!stopped){
-      const hit = gravityAt(_pp, _pa);
+      const hit = gravityAt(_pp, tPred, _pa);
       if(i === 0) {
         // gravInfo is fresh for the player's own position on the first step
         dom = gravInfo.dominant;
-        if(dom) { _r0.copy(_pp).sub(dom.center); d0 = _r0.length(); }
+        if(dom) { bodyPosAt(dom, tPred, _dc); _r0.copy(_pp).sub(_dc); d0 = _r0.length(); }
       }
       // Adaptive step: fine when close to a body, coarse out in the gaps. Same step count
       // now buys minutes of lookahead in deep space without losing accuracy near planets.
@@ -741,10 +1024,13 @@ function updatePrediction() {
         CONFIG.predictDtBase * (gravInfo.nearestD / gravInfo.nearestReach)));
       _pv.addScaledVector(_pa, dtStep);
       _pp.addScaledVector(_pv, dtStep);
+      tPred += dtStep;
       if(hit) stopped = true;
 
       if(dom && !stopped){
-        _r1.copy(_pp).sub(dom.center);
+        // Dominant-body-relative, at the time the path actually gets there.
+        bodyPosAt(dom, tPred, _dc);
+        _r1.copy(_pp).sub(_dc);
         const d = _r1.length();
         if(d < peri) { peri = d; periPoint.copy(_pp); }
         swept += _r0.angleTo(_r1);   // total angle walked around the dominant body
@@ -809,6 +1095,14 @@ function aimHit(range, includeBlocks) {
   return null;
 }
 
+// Walk up from a hit object to the body Group that owns it, so a placed block rides the
+// planet instead of being left behind in world space (v0.6 item 1).
+function ownerGroupOf(obj) {
+  let o = obj;
+  while(o) { if(o.userData && o.userData.orbitNode) return o; o = o.parent; }
+  return null;
+}
+
 function placeBlock() {
   const hit = aimHit(CONFIG.buildRange, true);
   if(!hit) return;
@@ -817,8 +1111,12 @@ function placeBlock() {
   const mesh = new THREE.Mesh(t.make(), new THREE.MeshStandardMaterial({color:t.color, emissive:t.emissive, emissiveIntensity:1.6, roughness:0.9}));
   mesh.position.copy(hit.point).addScaledVector(n, t.half.y);
   mesh.quaternion.setFromUnitVectors(new THREE.Vector3(0,1,0), n);
-  mesh.updateMatrixWorld();
   scene.add(mesh);
+  mesh.updateMatrixWorld();
+  // attach() re-parents while preserving the world transform we just computed.
+  const owner = ownerGroupOf(hit.object);
+  if(owner) owner.attach(mesh);
+  mesh.updateMatrixWorld();
   blocks.push({mesh, half:t.half});
   blockMeshes.push(mesh);
 }
@@ -830,7 +1128,7 @@ function removeBlock() {
   if(!hits.length) return;
   const mesh = hits[0].object;
   if(hits[0].point.distanceTo(player.position) > CONFIG.buildRange) return;
-  scene.remove(mesh);
+  if(mesh.parent) mesh.parent.remove(mesh);
   blockMeshes.splice(blockMeshes.indexOf(mesh),1);
   blocks.splice(blocks.findIndex(b=>b.mesh===mesh),1);
 }
@@ -840,6 +1138,8 @@ function removeBlock() {
 // ============================================================
 const vel = new THREE.Vector3();
 let grounded = false;
+let groundBody = null;   // which body we are standing on — its velocity is our frame of reference
+let simTime = 0;         // the clock every orbit is a function of
 let jumpQueued = false;
 let locked = false;
 const keys = {};
@@ -854,9 +1154,154 @@ let camForward = new THREE.Vector3(0,0,-1);
 let pitch = 0.15;
 let yawDelta = 0;
 let camDist = CONFIG.camDist;
+// Free look (v0.6 item 5). These are OFFSETS layered on top of the aim direction at camera
+// time only. camForward/camRight/camUp and getLookDir() are never touched by them — per
+// CLAUDE.md that basis is the most fragile system in the file, and the spec wants aim frozen
+// while the camera swings, so an offset is both the safest and the correct model.
+let flYaw = 0, flPitch = 0;
+let eyeHeld = false;
+const freeLookOn = () => isTouch ? eyeHeld : (keys['AltLeft'] || keys['AltRight'] || false);
 
 function getLookDir() {
   return camForward.clone().multiplyScalar(Math.cos(pitch)).addScaledVector(camUp, Math.sin(pitch)).normalize();
+}
+
+// ============================================================
+// Minimap (v0.6 item 4)
+// Top-down XZ, sun-centred, LOG-RADIAL. A linear map is useless here: Pluto sits 101x
+// further out than Mercury, so linear crushes the entire inner system into the middle pixel.
+// log10(1 + d/K) normalised to the outermost orbit keeps every planet visibly separate.
+// It is a 2D canvas overlay — nothing here touches the WebGL scene or the camera basis.
+// ============================================================
+const mmWrap = document.getElementById('mmwrap');
+const mmBack = document.getElementById('mmback');
+const mmCanvas = document.getElementById('minimap');
+const mmCtx = mmCanvas.getContext('2d');
+let mmExpanded = false;
+
+// approximations of each body's palette — the map should read at a glance, not match exactly
+const MM_COLORS = {
+  SUN:'#ffdd33', MERCURY:'#9a8f86', VENUS:'#d9b26a', EARTH:'#3f7c9a', MARS:'#a14f2c',
+  JUPITER:'#c9a06f', SATURN:'#e6d3a3', URANUS:'#9fd6de', NEPTUNE:'#3b5bd6', PLUTO:'#b6a89a'
+};
+const MM_PLANETS = bodies.filter(b => !b.star && !b.belt);
+const MM_MAXDIST = MM_PLANETS.reduce((m,b) => Math.max(m, b.orbitR), 1);
+const MM_FULLLOG = Math.log10(1 + MM_MAXDIST/CONFIG.minimapLogK);
+const mmRadius = (dist, Rpix) =>
+  Rpix * Math.min(1.06, Math.log10(1 + Math.max(0,dist)/CONFIG.minimapLogK) / MM_FULLLOG);
+
+// world XZ -> canvas px. Sun is at the origin, so it lands dead centre.
+const _mmp = { x:0, y:0 };
+function mmProject(x, z, cx, cy, Rpix, out) {
+  const r = mmRadius(Math.hypot(x, z), Rpix);
+  const a = Math.atan2(z, x);
+  out.x = cx + Math.cos(a)*r;
+  out.y = cy + Math.sin(a)*r;
+  return out;
+}
+
+function drawMinimap() {
+  const cssW = mmWrap.clientWidth || CONFIG.minimapCorner;
+  const cssH = mmWrap.clientHeight || CONFIG.minimapCorner;
+  if(!cssW || !cssH) return;
+  const dpr = Math.min(window.devicePixelRatio || 1, 2);
+  if(mmCanvas.width !== Math.round(cssW*dpr) || mmCanvas.height !== Math.round(cssH*dpr)) {
+    mmCanvas.width = Math.round(cssW*dpr);
+    mmCanvas.height = Math.round(cssH*dpr);
+  }
+  const ctx = mmCtx;
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.clearRect(0, 0, cssW, cssH);
+
+  const cx = cssW/2, cy = cssH/2;
+  const pad = mmExpanded ? 22 : 7;
+  const Rpix = Math.min(cssW, cssH)/2 - pad;
+  const big = mmExpanded;
+
+  // belt annulus, faint
+  {
+    const rIn  = mmRadius(2.2*CONFIG.AU, Rpix);
+    const rOut = mmRadius(3.3*CONFIG.AU, Rpix);
+    ctx.beginPath();
+    ctx.arc(cx, cy, (rIn+rOut)/2, 0, Math.PI*2);
+    ctx.strokeStyle = 'rgba(180,160,130,0.16)';
+    ctx.lineWidth = Math.max(1, rOut-rIn);
+    ctx.stroke();
+  }
+
+  // orbit rings
+  ctx.lineWidth = 1;
+  for(const b of MM_PLANETS) {
+    ctx.beginPath();
+    ctx.arc(cx, cy, mmRadius(b.orbitR, Rpix), 0, Math.PI*2);
+    ctx.strokeStyle = 'rgba(255,255,255,0.10)';
+    ctx.stroke();
+  }
+
+  // sun
+  ctx.beginPath();
+  ctx.arc(cx, cy, big ? 4 : 2.5, 0, Math.PI*2);
+  ctx.fillStyle = MM_COLORS.SUN;
+  ctx.fill();
+
+  // planets
+  if(big) { ctx.font = '9px "Courier New",monospace'; ctx.textAlign = 'center'; }
+  for(const b of MM_PLANETS) {
+    mmProject(b.center.x, b.center.z, cx, cy, Rpix, _mmp);
+    ctx.beginPath();
+    ctx.arc(_mmp.x, _mmp.y, big ? 3.5 : 2, 0, Math.PI*2);
+    ctx.fillStyle = MM_COLORS[b.name] || '#999';
+    ctx.fill();
+    if(big) {   // labels on the expanded view only — they would be soup at 150px
+      ctx.fillStyle = 'rgba(255,255,255,0.55)';
+      ctx.fillText(b.name, _mmp.x, _mmp.y - 6);
+    }
+  }
+
+  // prediction endpoint, in the trajectory line's own outcome colour
+  if(predLine.visible) {
+    const end = predPts[predPts.length-1];
+    mmProject(end.x, end.z, cx, cy, Rpix, _mmp);
+    ctx.beginPath();
+    ctx.arc(_mmp.x, _mmp.y, big ? 2.5 : 1.6, 0, Math.PI*2);
+    ctx.fillStyle = predOutcome === PRED.IMPACT ? CONFIG.predColorImpact :
+                    predOutcome === PRED.ORBIT  ? CONFIG.predColorOrbit  : CONFIG.predColorCoast;
+    ctx.fill();
+  }
+
+  // player + velocity arrow
+  mmProject(player.position.x, player.position.z, cx, cy, Rpix, _mmp);
+  const px = _mmp.x, py = _mmp.y;
+  const sp = Math.hypot(vel.x, vel.z);
+  if(sp > 0.001) {
+    // Probe a point ahead in WORLD space and project it: doing the arrow in map space keeps
+    // it honest under the log distortion instead of pointing at a lie near the sun.
+    const k = CONFIG.minimapArrowWorld/sp;
+    mmProject(player.position.x + vel.x*k, player.position.z + vel.z*k, cx, cy, Rpix, _mmp);
+    let dx = _mmp.x - px, dy = _mmp.y - py;
+    const dl = Math.hypot(dx, dy);
+    if(dl > 0.0001) {
+      const L = big ? CONFIG.minimapArrowPx*1.5 : CONFIG.minimapArrowPx;
+      dx = dx/dl*L; dy = dy/dl*L;
+      ctx.beginPath();
+      ctx.moveTo(px, py);
+      ctx.lineTo(px+dx, py+dy);
+      ctx.strokeStyle = 'rgba(255,255,255,0.8)';
+      ctx.lineWidth = big ? 1.6 : 1.2;
+      ctx.stroke();
+    }
+  }
+  ctx.beginPath();
+  ctx.arc(px, py, big ? 3 : 2, 0, Math.PI*2);
+  ctx.fillStyle = '#fff';
+  ctx.fill();
+}
+
+function setMinimap(on) {
+  mmExpanded = on;
+  mmWrap.classList.toggle('exp', on);
+  mmBack.classList.toggle('on', on);
+  drawMinimap();
 }
 
 // HUD element refs
@@ -867,16 +1312,19 @@ const heatBox = document.getElementById('heat');
 const darkEl = document.getElementById('dark');
 let lastTint = '#000000';   // avoids restyling the overlay every frame
 
-// Spawn on top of Earth
+// Spawn on top of Earth. Earth moves, so the spawn point is a function of time — and we
+// inherit Earth's orbital velocity, otherwise respawn drops you into a 50 m/s skid.
 const earth = bodies.find(b=>b.name==='EARTH');
 const spawnDir = new THREE.Vector3(0,1,0);
-const spawnPoint = earth.center.clone().addScaledVector(
-  spawnDir, earth.R * earth.shapeFn(spawnDir) + CONFIG.playerRadius + 0.5
-);
+const spawnLift = earth.R * earth.shapeFn(spawnDir) + CONFIG.playerRadius + 0.5;
+function spawnPointAt(t, out) {
+  return bodyPosAt(earth, t, out).addScaledVector(spawnDir, spawnLift);
+}
 function respawn(){
-  player.position.copy(spawnPoint);
-  vel.set(0,0,0);
+  spawnPointAt(simTime, player.position);
+  bodyVelAt(earth, simTime, vel);
   heat = 0; overheated = false;
+  grounded = false; groundBody = null;
 }
 respawn();
 for(const p of trailPts) p.copy(player.position);
@@ -910,8 +1358,15 @@ document.addEventListener('pointerlockchange', () => {
 document.addEventListener('mousemove', e => {
   if(!playing || isTouch) return;
   const mx = e.movementX || 0, my = e.movementY || 0;
-  yawDelta -= mx*0.0018;
-  pitch = Math.max(-1.25, Math.min(1.25, pitch - my*0.0018));
+  // ALT held: the mouse orbits the CAMERA and the aim stays exactly where it was. Reading
+  // e.altKey as well as the key map keeps us honest if a keyup got eaten by the OS.
+  if(freeLookOn() || e.altKey) {
+    flYaw   -= mx*CONFIG.freeLookSens;
+    flPitch = Math.max(-CONFIG.freeLookMaxPitch, Math.min(CONFIG.freeLookMaxPitch, flPitch - my*CONFIG.freeLookSens));
+    return;
+  }
+  yawDelta -= mx*CONFIG.freeLookSens;
+  pitch = Math.max(-1.25, Math.min(1.25, pitch - my*CONFIG.freeLookSens));
 });
 
 document.addEventListener('wheel', e => {
@@ -926,9 +1381,11 @@ document.addEventListener('keydown', e => {
   if(e.code==='Digit3') setSelectedBlock(2);
   if(e.code==='KeyX') removeBlock();
   if(e.code==='KeyR') respawn();
+  if(e.code==='KeyM' && !e.repeat) setMinimap(!mmExpanded);        // v0.6 item 4
+  if(e.code==='Escape' && mmExpanded) setMinimap(false);
 });
 document.addEventListener('keyup', e => { keys[e.code]=false; });
-window.addEventListener('blur', () => { for(const k in keys) keys[k]=false; mouseBurn=false; });
+window.addEventListener('blur', () => { for(const k in keys) keys[k]=false; mouseBurn=false; eyeHeld=false; });
 
 // ============================================================
 // Input — touch (twin virtual sticks)
@@ -937,6 +1394,7 @@ window.addEventListener('blur', () => { for(const k in keys) keys[k]=false; mous
 const stickL = { el:document.getElementById('stickL'), knob:document.getElementById('knobL'), id:null, ox:0, oy:0, x:0, y:0 };
 const stickR = { el:document.getElementById('stickR'), knob:document.getElementById('knobR'), id:null, ox:0, oy:0, x:0, y:0 };
 const btnJump = document.getElementById('btnJump');
+const btnEye  = document.getElementById('btnEye');
 const btnReset = document.getElementById('btnReset');
 let jumpHeld = false;
 
@@ -991,6 +1449,15 @@ if(isTouch) {
   btnJump.addEventListener('touchstart', e => { e.preventDefault(); jumpHeld = true; jumpQueued = true; btnJump.classList.add('on'); }, {passive:false});
   btnJump.addEventListener('touchend',   e => { e.preventDefault(); jumpHeld = false; btnJump.classList.remove('on'); }, {passive:false});
   btnReset.addEventListener('touchstart', e => { e.preventDefault(); respawn(); }, {passive:false});
+  // v0.6 item 5: hold EYE and the right stick orbits the camera; release eases back to aim.
+  btnEye.addEventListener('touchstart', e => { e.preventDefault(); eyeHeld = true;  btnEye.classList.add('on'); }, {passive:false});
+  btnEye.addEventListener('touchend',   e => { e.preventDefault(); eyeHeld = false; btnEye.classList.remove('on'); }, {passive:false});
+  btnEye.addEventListener('touchcancel', e => { eyeHeld = false; btnEye.classList.remove('on'); });
+  // v0.6 item 4: tap the corner map to expand, tap again (or the backdrop) to collapse.
+  // These listeners sit on the overlay elements, so they never reach the canvas touchstart
+  // that spawns the sticks.
+  mmWrap.addEventListener('touchstart', e => { e.preventDefault(); e.stopPropagation(); setMinimap(!mmExpanded); }, {passive:false});
+  mmBack.addEventListener('touchstart', e => { e.preventDefault(); e.stopPropagation(); setMinimap(false); }, {passive:false});
 }
 
 // ============================================================
@@ -1002,12 +1469,36 @@ const scratch = new THREE.Vector3();
 const scratch2 = new THREE.Vector3();
 const gAccum = new THREE.Vector3();
 const thrustDir = new THREE.Vector3();
+const _bv = new THREE.Vector3();     // a body's orbital velocity
+const _bv2 = new THREE.Vector3();
+const _vrel = new THREE.Vector3();   // player velocity in the ground body's frame
+
+// An atmosphere co-moves with its planet, so aerobraking must brake velocity RELATIVE to
+// that body. Braking world velocity would mean simply standing in Earth's atmosphere pulls
+// you out of Earth's frame at ~30 m/s^2 (0.6 drag x 50 m/s of orbital motion). With static
+// planets in v0.5 the two were identical, which is why this only surfaces now.
+function brakeRelative(b, factor) {
+  bodyVelAt(b, simTime, _bv2);
+  _vrel.copy(vel).sub(_bv2).multiplyScalar(factor);
+  vel.copy(_vrel).add(_bv2);
+}
 
 function animate(now) {
   requestAnimationFrame(animate);
   const dt = Math.min((now-last)/1000, 0.05);
   last = now;
   frameCount++;
+
+  // --- the system moves (v0.6 item 1) ---
+  // Analytic positions, so this is a write, not an integration: no drift, and the predictor
+  // can ask for any t. Must run before anything reads a body centre this frame.
+  simTime += dt;
+  updateOrbiters(simTime);
+  // Carry the player along with whatever they were standing on last frame, or Earth simply
+  // slides out from under them at 50 m/s.
+  if(grounded && groundBody) {
+    player.position.add(scratch2.copy(groundBody.center).sub(groundBody.prev));
+  }
 
   // --- nearest body + local up ---
   const near = nearestBody(player.position);
@@ -1023,13 +1514,28 @@ function animate(now) {
     yawDelta -= stickL.x * CONFIG.lookRate * dt;
     pitch = Math.max(-1.25, Math.min(1.25, pitch - stickL.y * CONFIG.lookRate * dt));
   }
+
+  // --- free look offsets (v0.6 item 5) ---
+  // Touch: while EYE is held the RIGHT stick orbits the camera instead of walking/burning.
+  const freeLook = freeLookOn();
+  if(freeLook && isTouch && (Math.abs(stickR.x) > CONFIG.stickDead || Math.abs(stickR.y) > CONFIG.stickDead)) {
+    flYaw   -= stickR.x * CONFIG.freeLookRate * dt;
+    flPitch = Math.max(-CONFIG.freeLookMaxPitch, Math.min(CONFIG.freeLookMaxPitch,
+              flPitch - stickR.y * CONFIG.freeLookRate * dt));
+  }
+  if(!freeLook && (flYaw !== 0 || flPitch !== 0)) {
+    const back = 1 - Math.exp(-CONFIG.freeLookReturn*dt);   // ~95% home in 0.25s
+    flYaw   *= (1 - back);
+    flPitch *= (1 - back);
+    if(Math.abs(flYaw) < 1e-4 && Math.abs(flPitch) < 1e-4) { flYaw = 0; flPitch = 0; }
+  }
   if(yawDelta !== 0){ camRight.applyAxisAngle(camUp, yawDelta); yawDelta = 0; }
   camRight.addScaledVector(camUp, -camRight.dot(camUp)).normalize();
   camForward = new THREE.Vector3().crossVectors(camUp, camRight);
   const look = getLookDir();
 
   // --- gravity (shared field function) ---
-  gravityAt(player.position, gAccum);
+  gravityAt(player.position, simTime, gAccum);
   gMag = gAccum.length();
   vel.addScaledVector(gAccum, dt);
 
@@ -1037,7 +1543,8 @@ function animate(now) {
   let throttle = 0;
   thrustDir.set(0,0,0);
   if(isTouch) {
-    const mag = Math.hypot(stickR.x, stickR.y);
+    // free look owns the right stick while EYE is held, so no burn from it
+    const mag = freeLook ? 0 : Math.hypot(stickR.x, stickR.y);
     const wantBurn = mag > CONFIG.stickDead && (!grounded || jumpHeld);
     if(wantBurn) {
       throttle = Math.min(1, mag);
@@ -1060,9 +1567,15 @@ function animate(now) {
   }
 
   // --- grounded walking ---
+  // RELATIVE-VELOCITY PHYSICS (v0.6 item 1): the planet under you is doing ~50 m/s. Every
+  // walk/friction/jump rule runs on velocity in THAT body's frame, then we add the frame
+  // back on. Without this, walking east on Earth means walking at 59 m/s and west means 41.
   if(grounded && !thrusting) {
-    const vUpAmt = vel.dot(localUp);
-    const vT = vel.clone().addScaledVector(localUp, -vUpAmt);
+    const gb = groundBody || near.b;
+    bodyVelAt(gb, simTime, _bv);
+    _vrel.copy(vel).sub(_bv);
+    const vUpAmt = _vrel.dot(localUp);
+    const vT = _vrel.clone().addScaledVector(localUp, -vUpAmt);
     const fT = camForward.clone().addScaledVector(localUp, -camForward.dot(localUp)).normalize();
     const rT = camRight.clone().addScaledVector(localUp, -camRight.dot(localUp)).normalize();
     const input = new THREE.Vector3();
@@ -1070,7 +1583,7 @@ function animate(now) {
     if(keys['KeyS']) input.sub(fT);
     if(keys['KeyD']) input.add(rT);
     if(keys['KeyA']) input.sub(rT);
-    if(isTouch && !jumpHeld) {
+    if(isTouch && !jumpHeld && !freeLook) {   // free look suspends walking (item 5)
       input.addScaledVector(fT, -stickR.y).addScaledVector(rT, stickR.x);
     }
     if(input.lengthSq() > CONFIG.stickDead*CONFIG.stickDead) {
@@ -1080,8 +1593,9 @@ function animate(now) {
     } else {
       vT.multiplyScalar(Math.max(0, 1 - CONFIG.friction*dt));
     }
-    vel.copy(vT).addScaledVector(localUp, vUpAmt);
-    if(jumpQueued) vel.addScaledVector(localUp, CONFIG.jumpSpeed);
+    _vrel.copy(vT).addScaledVector(localUp, vUpAmt);
+    if(jumpQueued) _vrel.addScaledVector(localUp, CONFIG.jumpSpeed);
+    vel.copy(_vrel).add(_bv);
   }
   jumpQueued = false;
 
@@ -1093,14 +1607,14 @@ function animate(now) {
     const b = near.b;
     if(b.gas && near.dCenter < b.cloudR) {
       const depth = Math.min(1, Math.max(0, (b.cloudR - near.dCenter) / (b.cloudR - b.R*1.2)));
-      if(!grounded) vel.multiplyScalar(Math.max(0, 1 - depth*CONFIG.gasInteriorDrag*dt));
+      if(!grounded) brakeRelative(b, Math.max(0, 1 - depth*CONFIG.gasInteriorDrag*dt));
       darkness = Math.min(0.93, depth*0.98);   // gas interior darkness: unchanged
       noReturn = gMag > CONFIG.jetThrust;
     } else if(b.atmo) {
       const atmoTop = near.surfR*(1 + b.atmo.h);
       if(near.dCenter < atmoTop) {
         const density = Math.min(1, Math.max(0, (atmoTop - near.dCenter)/(atmoTop - near.surfR)));
-        if(!grounded) vel.multiplyScalar(Math.max(0, 1 - density*b.atmo.drag*dt));
+        if(!grounded) brakeRelative(b, Math.max(0, 1 - density*b.atmo.drag*dt));
         if(b.atmo.darken) darkness = density*b.atmo.darken;      // Venus keeps its darken
         if(b.atmo.sky) {
           tint = b.atmo.sky;
@@ -1113,10 +1627,20 @@ function animate(now) {
   darkEl.style.opacity = darkness.toFixed(2);
 
   if(CONFIG.drag !== 1) vel.multiplyScalar(Math.pow(CONFIG.drag, dt*60)); // frame-rate independent
-  player.position.addScaledVector(vel, dt);
+  // While grounded we are pinned to the ground body's frame: the frame delta applied at the
+  // top of this frame already carries the orbital motion, so integrating world vel here too
+  // would move us at 2x the planet's speed and slide us across the terrain. Integrate only
+  // what we are doing WITHIN that frame. Airborne, the world velocity is the whole story.
+  if(grounded && groundBody) {
+    bodyVelAt(groundBody, simTime, _bv2);
+    player.position.addScaledVector(_vrel.copy(vel).sub(_bv2), dt);
+  } else {
+    player.position.addScaledVector(vel, dt);
+  }
 
   // --- surface collision (sun is deadly; gas giants land on the core) ---
   grounded = false;
+  groundBody = null;
   {
     const n2 = nearestBody(player.position);
     const dir = player.position.clone().sub(n2.b.center).normalize();
@@ -1125,9 +1649,13 @@ function animate(now) {
     if(n2.b.deadly && dSurf < 140) { respawn(); }
     else if(dSurf <= 0.03) {
       player.position.copy(n2.b.center).addScaledVector(dir, surfR + CONFIG.playerRadius);
-      const radial = vel.dot(dir);
+      // Cancel the radial component of RELATIVE velocity, not world velocity: arriving at a
+      // planet that is running away from you is not a landing. Matching its motion is.
+      bodyVelAt(n2.b, simTime, _bv2);
+      const radial = _vrel.copy(vel).sub(_bv2).dot(dir);
       if(radial < 0) vel.addScaledVector(dir, -radial);
       grounded = true;
+      groundBody = n2.b;
     }
   }
 
@@ -1144,10 +1672,12 @@ function animate(now) {
     if(d > 0.0001 && d < CONFIG.playerRadius) {
       const pushWorld = delta.normalize().transformDirection(b.mesh.matrixWorld).normalize();
       player.position.addScaledVector(pushWorld, CONFIG.playerRadius - d);
-      const vn = vel.dot(pushWorld);
+      // blocks ride their planet, so the same relative-velocity rule applies here
+      bodyVelAt(near.b, simTime, _bv2);
+      const vn = _vrel.copy(vel).sub(_bv2).dot(pushWorld);
       if(vn < 0) vel.addScaledVector(pushWorld, -vn);
       const upLocal = player.position.clone().sub(near.b.center).normalize();
-      if(pushWorld.dot(upLocal) > 0.5) grounded = true;
+      if(pushWorld.dot(upLocal) > 0.5) { grounded = true; if(!groundBody) groundBody = near.b; }
     }
   }
 
@@ -1159,7 +1689,11 @@ function animate(now) {
   trailGeo.setFromPoints(trailPts);
 
   // --- trajectory prediction (hidden when parked) ---
-  const showPred = !grounded || vel.length() > 3;
+  // Gate on RELATIVE speed: standing still on Earth is 50 m/s in world terms, which would
+  // otherwise leave the prediction line switched on permanently while you are planted.
+  bodyVelAt(near.b, simTime, _bv2);
+  const relSpeed = _vrel.copy(vel).sub(_bv2).length();
+  const showPred = !grounded || relSpeed > 3;
   predLine.visible = showPred;
   if(showPred && frameCount % 2 === 0) updatePrediction();
 
@@ -1180,12 +1714,24 @@ function animate(now) {
   }
 
   // --- camera ---
+  // FREE LOOK (v0.6 item 5): camView is `look` swung by the offset angles. This is the only
+  // place the offset is consumed — thrust, prediction, HUD and getLookDir() all still run on
+  // the untouched `look`, which is exactly why aim stays frozen while the camera orbits.
+  let camView = look;
+  if(flYaw !== 0 || flPitch !== 0) {
+    const qy = new THREE.Quaternion().setFromAxisAngle(camUp, flYaw);
+    const axis = camRight.clone().applyQuaternion(qy);
+    camView = look.clone().applyQuaternion(qy).applyQuaternion(
+      new THREE.Quaternion().setFromAxisAngle(axis, flPitch));
+  }
   const idealCamPos = player.position.clone()
-    .addScaledVector(look, -camDist)
+    .addScaledVector(camView, -camDist)
     .addScaledVector(camUp, 1.5);
-  camera.position.lerp(idealCamPos, CONFIG.camLerp);
+  // v0.6 item 6: a fixed lerp factor makes the camera stiffer the faster you render, so at
+  // 160Hz the old lerp(0.12) chased ~2.7x harder than at 60. This form is dt-correct.
+  camera.position.lerp(idealCamPos, 1 - Math.exp(-CONFIG.camSmooth*dt));
   camera.up.copy(camUp);
-  camera.lookAt(player.position.clone().addScaledVector(look, 10));
+  camera.lookAt(player.position.clone().addScaledVector(camView, 10));
   stars.position.copy(camera.position);
 
   // --- periapsis marker (scaled by camera distance so it stays a readable dot) ---
@@ -1197,9 +1743,12 @@ function animate(now) {
     periMarker.visible = false;
   }
 
+  // --- minimap (v0.6 item 4) ---
+  if(frameCount % CONFIG.minimapEvery === 0) drawMinimap();
+
   // --- HUD ---
   if(frameCount%6===0) {
-    const speed = vel.length();
+    const speed = relSpeed;   // relative to the nearest body — this is what rendezvous needs
     // orbital + escape velocity at current distance from nearest body
     const reach = near.b.cloudR || near.b.R;
     const gHere = near.b.g * (reach / Math.max(near.dCenter, reach))**2;
@@ -1236,10 +1785,16 @@ function startGame() {
   if(!isTouch) { canvas.style.cursor = 'none'; tryPointerLock(); }
   else {
     btnJump.style.display = 'flex';
+    btnEye.style.display = 'flex';
     btnReset.style.display = 'flex';
     document.getElementById('blockbar').style.display = 'none';
     document.getElementById('ui').innerHTML = '<b>LEFT</b> look · <b>RIGHT</b> walk / burn<br><b>JUMP</b> hold + stick = burn from ground';
     heatBox.style.bottom = ''; heatBox.style.top = '16px'; heatBox.style.right = '84px'; heatBox.style.width = '150px';
+    // The bottom-right is where the right thumb lives (walk/burn stick), so the map goes
+    // top-right under RESET, clear of both sticks and the JUMP button.
+    mmWrap.style.bottom = ''; mmWrap.style.top = '132px'; mmWrap.style.right = '16px';
+    mmWrap.style.width = '120px'; mmWrap.style.height = '120px';
+    mmWrap.style.pointerEvents = 'auto';   // desktop stays 'none': pointer lock eats clicks
   }
 }
 document.getElementById('playbtn').addEventListener('click', startGame);
