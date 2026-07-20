@@ -32,17 +32,23 @@ See docs/v05-spec.md (the work order). Summary:
 - [ ] Convert to Vite + TypeScript, split modules
 - [ ] Title polish, minimal audio, itch.io page, blog write-up
 
-## Milestone 8: v0.6 "The System Moves" — SPEC'D (docs/v06-spec.md), awaiting Opus
-- [ ] Item 1: realistic-fast kinematic orbits, relative-velocity landing (rendezvous), time-aware gravityAt
-- [ ] Item 2: NASA textures x procedural vertex-color blend, graceful fallback
-- [ ] Item 3: belt to ~120 rocks (shared geometries, decor tier)
-- [ ] Item 4: log-radial minimap, corner + M/tap expand
-- [ ] Item 5: free look (ALT / EYE button), aim frozen
-- [ ] Item 6: atmo-peak shell fix, frame-rate-independent camera, full release ritual
+## Milestone 8: v0.6 "The System Moves" — DONE (docs/v06-spec.md, executed by Opus)
+- [x] Item 1: realistic-fast kinematic orbits, relative-velocity landing (rendezvous), time-aware gravityAt
+- [x] Item 2: NASA textures x procedural vertex-color blend, graceful fallback (URLs need one browser check; Wikimedia Commons is the CORS-safe swap if needed)
+- [x] Item 3: belt to 120 rocks (5 shared geometries, decor tier, 4 majors)
+- [x] Item 4: log-radial minimap, corner + M/tap expand
+- [x] Item 5: free look (ALT / EYE button), aim frozen
+- [x] Item 6: atmo-peak shell fix, frame-rate-independent camera, full release ritual
+- [x] Executor-found fixes: atmo drag now brakes relative to body (was world-frame, made landing impossible); spec's double-counted orbital motion corrected; sun exempted from gravity cull
 
 ## Backlog (ideas land here, not in the build)
-- Moons (Luna, Io/Europa, Titan); orbital motion of planets (true slingshots)
+- JUPITER GRAVITY REBALANCE (priority): GM = 45*1756^2 ≈ 1.39e8, ~15x the sun's — it out-dominates the outer system and cloud-top escape is 398 m/s vs player 20-80; any pass under ~12,000u is a capture. Fix direction: per-body gravity override targeting cloud-top escape ≈ 3-4x cruise speed; exact number from playtest.
+- Predictor treats belt rocks as static (spec-sanctioned) — slightly wrong when landing on one
+- dt clamp has no explicit floor (Math.max(0, ...) would make monotonicity assumption explicit)
+- Free-look building raycasts from swung camera along frozen aim (harmless, slightly odd)
+- Moons (Luna, Io/Europa, Titan); elliptical/inclined orbits
 - Farming loop; looting + inventory; mobile building
+- LOD crossfade for distance-blended detail textures (J's idea, credited)
 - Longer past-trail (owner deferred from v0.5)
 - Fast travel / ship; sound design; save/load (post repo conversion)
 
@@ -53,3 +59,4 @@ See docs/v05-spec.md (the work order). Summary:
 - 2026-07-14 · v0.4: THE PIVOT — grapple removed, orbital mechanics core, prediction line, mobile twin-stick
 - 2026-07-14 · v0.5 spec written (docs/v05-spec.md); execution handed to Opus
 - 2026-07-16 · v0.5 BEAUTIFUL ORBITS: 5 terrain octaves + baked craters (Mercury/Pluto, detail 5), stormier gas bands, fresnel atmosphere shader + sky tint, desktop bloom composer (RenderPass/UnrealBloomPass/OutputPass), adaptive prediction dt with ORBIT/IMPACT/COAST colouring + periapsis marker
+- 2026-07-17 · v0.6 THE SYSTEM MOVES (Opus): kinematic orbits + relative-velocity rendezvous physics, time-aware gravityAt, NASA textures x procedural blend, 120-rock belt, log-radial minimap, ALT/EYE free look; executor fixed 2 real bugs (world-frame atmo drag, spec's double-counted orbital motion)

@@ -2,6 +2,29 @@
 
 All notable changes to this project. Format loosely follows keepachangelog.com.
 
+## [0.6] - 2026-07-17 — THE SYSTEM MOVES (executed by Opus from docs/v06-spec.md)
+### Added
+- Kinematic circular orbits for every body: analytic position/velocity vs time, so the predictor stays exact and cheap. Earth ~50.5 m/s, Mercury 80.9, Pluto 8.0. New CONFIG.orbitTimeScale (default 1.0).
+- bodyPosAt / bodyVelAt; gravityAt(pos, t, out) is now time-aware (live sim passes current time, predictor passes future time per step)
+- NASA/CC-BY 2k textures on Mercury through Neptune, multiplied over existing procedural vertex paint; Saturn's rings use the ring alpha map with radially remapped UVs
+- Asteroid belt 34 -> 120 rocks off 5 shared geometries; 3 cluster knots + sparse scatter; 4 majors up to R=60
+- Minimap (M / tap): top-down sun-centred log-radial; orbit rings, belt annulus, planet dots, player + velocity arrow, prediction endpoint in outcome colour; expands to 70vmin
+- Free look: hold ALT (desktop) or EYE button (touch) — camera orbits, aim stays frozen
+### Changed
+- GROUNDED PHYSICS IS NOW RELATIVE: walk/friction/jump/collision run in the frame of the body under you. Landing requires matching the planet's velocity — the rendezvous mechanic, intended.
+- HUD v: shows speed relative to nearest body; blocks parent to the body's group and ride the planet; respawn tracks Earth's position and inherits its orbital velocity
+- Planets/gas clouds moved to SphereGeometry (UVs for textures); cores and belt rocks stay Icosahedron
+- Camera smoothing frame-rate independent (1-exp(-camSmooth*dt), camSmooth 7.7 matches v0.5 at 60fps)
+### Fixed
+- Atmospheric drag braked WORLD velocity (standing in Earth's atmosphere braked ~30 m/s² against the sun's frame; landing was impossible) — now brakes relative to the body
+- Spec's double-counted orbital motion (vel composition + frame delta both applied) — you moved at 2x planet speed and slid
+- Atmosphere shells sized from PEAK terrain radius (Earth's mountains poked 12.8u through the old shell)
+- Sun exempted from the gravity cull (its 0.008 pull at Saturn fell under the pebble threshold, leaving the outer system orbiting an invisible force)
+### Known issues
+- Jupiter's field out-scales the player: cloud-top escape 398 m/s vs player 20-80, GM ~15x sun's; passes under ~12,000u are captures (pre-existing v0.5 tuning; rebalance in backlog)
+- Predictor treats belt rocks as static (spec-sanctioned perf exception)
+- Texture URLs unverified from build sandbox; graceful fallback tested (total failure = exact v0.5 look). Wikimedia Commons mirrors are the CORS-safe swap if hotlinking fails.
+
 ## [0.5] - 2026-07-16 — BEAUTIFUL ORBITS (executed by Opus from docs/v05-spec.md)
 ### Added
 - Terrain: 5 noise octaves; baked crater bowls with raised rims on Mercury and Pluto (in shapeFn, so collision matches)
