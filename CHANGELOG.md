@@ -2,6 +2,15 @@
 
 All notable changes to this project. Format loosely follows keepachangelog.com.
 
+## [0.7] - 2026-07-20 — REFACTOR (executed from docs/v07-spec.md)
+### Changed
+- PURE REFACTOR, no behavior change. The single-file build became a Vite + TypeScript project with ES modules. Same physics, same feel, same visuals, same controls, same bugs (Jupiter imbalance included — that stays a backlog item). Verified against the v0.6 git tag: spawn-on-Earth starting state, gravity field, orbital/escape HUD, grounded relative-velocity settle, minimap/free-look/build toggles all match.
+- `index.html` is now a minimal shell (canvas + HUD divs + `<script type="module" src="/src/main.ts">`); the game lives in `src/` split along the file's existing section banners: config, scene, bodies/ (shape, orbits, gravity, textures, build-bodies), player/ (state, physics, prediction), build/, ui/ (minimap, hud), input/ (desktop, touch), loop, main.
+- three is now an npm dependency (was a CDN import map). Strict TypeScript passes with no `any` escapes except where three.js types require an assertion (each one commented).
+- State model: grouped module-level singletons (pstate/view/app in player/state.ts, sim in world/sim.ts), not a threaded context object — the same mutable objects the single-file build used, now with module addresses. Documented at the top of src/main.ts. The three invariants survive intact: one `shapeFn` per body feeds both mesh and collision; one `gravityAt` feeds both the live sim and the predictor; one exported CONFIG.
+- Build: `npm run build` typechecks then bundles to `dist/`. A GitHub Actions workflow (`.github/workflows/deploy.yml`) publishes `dist/` to Pages on push to main. Vite `base: './'` so the project-subpath deploy resolves assets.
+- Post-parity rider (separate commit, after the parity build verified): planet texture URLs bumped 2k -> 4k/8k and anisotropy maxed in the loader. Graceful fallback unchanged.
+
 ## [0.6] - 2026-07-17 — THE SYSTEM MOVES (executed by Opus from docs/v06-spec.md)
 ### Added
 - Kinematic circular orbits for every body: analytic position/velocity vs time, so the predictor stays exact and cheap. Earth ~50.5 m/s, Mercury 80.9, Pluto 8.0. New CONFIG.orbitTimeScale (default 1.0).

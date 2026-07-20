@@ -31,19 +31,50 @@ right-click to build, R to respawn.
 Mobile: left stick looks, right stick walks on the ground and vectors your burn in the air
 (deflection = throttle). Hold JUMP plus the stick to burn off the ground.
 
-## The whole game is one HTML file
+## Build & run
 
-By design, for now: fastest possible iteration loop while finding the feel. Everything
-tunable lives in a single CONFIG object at the top of the script. A proper module split
-is on the roadmap (docs/plan.md).
+Vite + TypeScript. Three.js is an npm dependency; there is no other runtime dependency.
+
+```
+npm install      # once
+npm run dev      # dev server with hot reload (prints a localhost URL)
+npm run build    # typechecks (tsc --noEmit) then bundles to dist/
+npm run preview  # serve the built dist/ locally
+```
+
+`npm run build` writes the built, bundled app to `dist/` (an `index.html` plus a hashed
+JS bundle under `dist/assets/`). Everything is self-contained; open `dist/index.html`
+through any static host.
+
+### Deploying to GitHub Pages
+
+Two options, both work; **A is recommended** now that there's a build step.
+
+- **A — GitHub Actions (recommended).** `.github/workflows/deploy.yml` builds on CI and
+  publishes `dist/` to Pages on every push to `main`. In the repo settings set
+  Pages → Build and deployment → Source: **GitHub Actions**. The raw source is never
+  served; the built app is.
+- **B — commit the build.** Run `npm run build` locally, commit the `dist/` folder, and
+  point Pages at it (a `docs/` folder or a `gh-pages` branch). Simpler, but you have to
+  remember to rebuild and commit each release.
+
+Vite is configured with `base: './'` so relative asset paths resolve under the project
+subpath (`https://user.github.io/solar-swing/`) either way.
 
 ## How it's built
+
+As of v0.7 the game is a small Vite + TypeScript project. `index.html` is a thin shell
+(canvas + HUD); the code lives in `src/`, split along the boundaries the single-file
+prototype already had: `config`, `scene`, `bodies/` (shape, orbits, gravity, textures,
+build-bodies), `player/` (state, physics, prediction), `build/`, `ui/` (minimap, hud),
+`input/` (desktop, touch), `loop`, `main`. All game-feel tuning still lives in one exported
+`CONFIG` object (`src/config.ts`).
 
 Solo project, developed in collaboration with AI: one model plans and reviews against a
 written spec with acceptance criteria (docs/v05-spec.md is an example), another executes
 it cold. Version history and process notes live in CHANGELOG.md and docs/devlog/.
 
-Three.js r164, ES modules, no other dependencies.
+Three.js r164, Vite, TypeScript. No other runtime dependencies.
 
 ## Copyright & usage
 
