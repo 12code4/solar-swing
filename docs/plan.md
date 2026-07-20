@@ -48,12 +48,12 @@ See docs/v05-spec.md (the work order). Summary:
 - [x] State = grouped module-level singletons (Executor decision 1), documented atop main.ts; three invariants intact (one shapeFn feeds mesh+collision, one gravityAt feeds sim+predictor, one CONFIG)
 - [x] Parity verified vs v0.6 tag: spawn-on-Earth start, gravity/HUD, grounded settle, minimap/free-look/build all match; runtime smoke-tested (no errors; texture-CDN block falls back to procedural exactly as designed)
 - [x] npm run build -> dist/; GitHub Actions Pages deploy workflow (base './')
-- [x] Post-parity rider (separate commit): texture URLs 2k -> 4k/8k, anisotropy maxed, fallback intact
+- [x] Post-parity rider (separate commit): texture URLs 2k -> 8k (Uranus/Neptune stay 2k), anisotropy already maxed, fallback intact
 - [x] v0.6 tagged on main as the permanent parity reference
 
 ## Backlog (ideas land here, not in the build)
 - Elegant CONTEXT-OBJECT state model: replace the grouped module-level singletons (chosen in v0.7 for parity-safety / minimal churn) with a threaded context. Protected by the v0.6 parity baseline; do it once there is coverage to catch a regression.
-- Texture sharpness REAL fix: procedural LOD detail crossfade up close. v0.7's rider only swapped 2k->4k/8k URLs + maxed anisotropy; a 4k/8k map still blurs when a body fills the screen. LOD detail is the actual answer (see also the distance-blended detail-texture backlog note below).
+- Texture sharpness REAL fix: procedural LOD detail crossfade up close. v0.7's rider only swapped 2k->8k URLs (anisotropy was already maxed); an 8k map still blurs when a body fills the screen. LOD detail is the actual answer (see also the distance-blended detail-texture backlog note below).
 - JUPITER GRAVITY REBALANCE (priority): GM = 45*1756^2 ≈ 1.39e8, ~15x the sun's — it out-dominates the outer system and cloud-top escape is 398 m/s vs player 20-80; any pass under ~12,000u is a capture. Fix direction: per-body gravity override targeting cloud-top escape ≈ 3-4x cruise speed; exact number from playtest.
 - Predictor treats belt rocks as static (spec-sanctioned) — slightly wrong when landing on one
 - dt clamp has no explicit floor (Math.max(0, ...) would make monotonicity assumption explicit)
@@ -72,4 +72,4 @@ See docs/v05-spec.md (the work order). Summary:
 - 2026-07-14 · v0.5 spec written (docs/v05-spec.md); execution handed to Opus
 - 2026-07-16 · v0.5 BEAUTIFUL ORBITS: 5 terrain octaves + baked craters (Mercury/Pluto, detail 5), stormier gas bands, fresnel atmosphere shader + sky tint, desktop bloom composer (RenderPass/UnrealBloomPass/OutputPass), adaptive prediction dt with ORBIT/IMPACT/COAST colouring + periapsis marker
 - 2026-07-17 · v0.6 THE SYSTEM MOVES (Opus): kinematic orbits + relative-velocity rendezvous physics, time-aware gravityAt, NASA textures x procedural blend, 120-rock belt, log-radial minimap, ALT/EYE free look; executor fixed 2 real bugs (world-frame atmo drag, spec's double-counted orbital motion)
-- 2026-07-20 · v0.7 REFACTOR: single 1810-line HTML -> Vite + TypeScript, 18 ES modules split along the existing section banners. Zero behavior change (parity vs v0.6 tag). Grouped module-level singletons (not a context object); strict tsc passes after each extraction. npm build -> dist/ + Actions Pages deploy. Post-parity rider: texture URLs 2k -> 4k/8k + max anisotropy. Tagged v0.6 as the parity reference.
+- 2026-07-20 · v0.7 REFACTOR: single 1810-line HTML -> Vite + TypeScript, 18 ES modules split along the existing section banners. Zero behavior change (parity vs v0.6 tag). Grouped module-level singletons (not a context object); strict tsc passes after each extraction. npm build -> dist/ + Actions Pages deploy. Post-parity rider: texture URLs 2k -> 8k (ice giants stay 2k), anisotropy already maxed. Tagged v0.6 as the parity reference.

@@ -2,23 +2,27 @@ import * as THREE from 'three';
 import { renderer } from '../scene';
 
 // ============================================================
-// NASA/CC-BY textures (v0.6 item 2)
+// NASA/CC-BY textures (v0.6 item 2; v0.7 post-parity sharpness rider)
 // Every texture is a bonus layer, never a dependency. TextureLoader is async and nothing
 // waits on it: the mesh is built and rendered from vertex colors immediately, and a map is
 // swapped in later IF it arrives. A 404, an offline browser, or a blocked CDN therefore
 // lands on exactly the v0.5 procedural look rather than a black planet.
-// Source: solarsystemscope.com 2k set, CC BY 4.0.
+// Source: solarsystemscope.com, CC BY 4.0. The 2k maps (2048x1024) blur when a body fills the
+// screen, so the rider bumps them to the 8k set (the resolutions solarsystemscope provides for
+// these bodies). Anisotropy is already maxed in the loader below. The graceful fallback is
+// unchanged, so a body whose 8k URL fails simply keeps its procedural v0.5 look. The real fix
+// for close-up blur is procedural LOD detail crossfade — that stays in plan.md backlog.
 // ============================================================
 const TEX_BASE = 'https://www.solarsystemscope.com/textures/download/';
 export const TEX_FILES: Record<string, string> = {
-  MERCURY: '2k_mercury.jpg',
-  VENUS:   '2k_venus_atmosphere.jpg',
-  EARTH:   '2k_earth_daymap.jpg',
-  MARS:    '2k_mars.jpg',
-  JUPITER: '2k_jupiter.jpg',
-  SATURN:  '2k_saturn.jpg',
-  URANUS:  '2k_uranus.jpg',
-  NEPTUNE: '2k_neptune.jpg'
+  MERCURY: '8k_mercury.jpg',
+  VENUS:   '8k_venus_atmosphere.jpg',
+  EARTH:   '8k_earth_daymap.jpg',
+  MARS:    '8k_mars.jpg',
+  JUPITER: '8k_jupiter.jpg',
+  SATURN:  '8k_saturn.jpg',
+  URANUS:  '2k_uranus.jpg',    // no 8k in the source set for the two ice giants; they are
+  NEPTUNE: '2k_neptune.jpg'    // near-featureless, so 2k reads fine even up close
   // PLUTO: procedural only, by design
 };
 const texLoader = new THREE.TextureLoader();

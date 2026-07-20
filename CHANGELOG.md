@@ -9,7 +9,7 @@ All notable changes to this project. Format loosely follows keepachangelog.com.
 - three is now an npm dependency (was a CDN import map). Strict TypeScript passes with no `any` escapes except where three.js types require an assertion (each one commented).
 - State model: grouped module-level singletons (pstate/view/app in player/state.ts, sim in world/sim.ts), not a threaded context object — the same mutable objects the single-file build used, now with module addresses. Documented at the top of src/main.ts. The three invariants survive intact: one `shapeFn` per body feeds both mesh and collision; one `gravityAt` feeds both the live sim and the predictor; one exported CONFIG.
 - Build: `npm run build` typechecks then bundles to `dist/`. A GitHub Actions workflow (`.github/workflows/deploy.yml`) publishes `dist/` to Pages on push to main. Vite `base: './'` so the project-subpath deploy resolves assets.
-- Post-parity rider (separate commit, after the parity build verified): planet texture URLs bumped 2k -> 4k/8k and anisotropy maxed in the loader. Graceful fallback unchanged.
+- Post-parity rider (separate commit, after the parity build verified): planet texture URLs bumped 2k -> 8k (Uranus/Neptune stay 2k: no 8k in the source set, and they read fine featureless); anisotropy was already maxed in the loader. Graceful fallback unchanged.
 
 ## [0.6] - 2026-07-17 — THE SYSTEM MOVES (executed by Opus from docs/v06-spec.md)
 ### Added

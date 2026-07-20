@@ -33,7 +33,7 @@ const BODY_DEFS: BodyDef[] = [
     atmo:{h:0.10, color:0xd9a066, glow:0.22, drag:0.3, sky:'#b4713d'} },
   { name:'JUPITER', type:'gas',   km:69911, au:5.20, ang:205, y: 350, paint:'jupiter', bands:12 },
   { name:'SATURN',  type:'gas',   km:58232, au:9.50, ang:215, y:-450, paint:'saturn',  bands:9,
-    rings:[[1.24,1.72],[1.78,2.1]], ringTilt:27, ringTex:'2k_saturn_ring_alpha.png' },
+    rings:[[1.24,1.72],[1.78,2.1]], ringTilt:27, ringTex:'8k_saturn_ring_alpha.png' },   // v0.7 rider: 2k -> 8k, graceful fallback intact
   { name:'URANUS',  type:'gas',   km:25362, au:19.2, ang:222, y: 600, paint:'uranus',  bands:5,
     rings:[[1.4,1.55]], ringTilt:98 },
   { name:'NEPTUNE', type:'gas',   km:24622, au:30.1, ang:228, y:-500, paint:'neptune', bands:7 },
